@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CompanyPortabilityPreviewResult } from "@paperclipai/shared";
 import {
+  buildDefaultImportAdapterOverrides,
   buildDefaultImportSelectionState,
   buildImportSelectionCatalog,
   buildSelectedFilesFromImportSelection,
@@ -217,6 +218,7 @@ describe("renderCompanyImportPreview", () => {
     const rendered = renderCompanyImportPreview(preview, {
       sourceLabel: "GitHub: https://github.com/paperclipai/companies/demo",
       targetLabel: "Imported Co (company-123)",
+      infoMessages: ["Using claude-local adapter"],
     });
 
     expect(rendered).toContain("Include");
@@ -226,6 +228,7 @@ describe("renderCompanyImportPreview", () => {
     expect(rendered).toContain("1 task total");
     expect(rendered).toContain("skills: 1 skill packaged");
     expect(rendered).toContain("+1 more");
+    expect(rendered).toContain("Using claude-local adapter");
     expect(rendered).toContain("Warnings");
     expect(rendered).toContain("Errors");
   });
@@ -248,12 +251,16 @@ describe("renderCompanyImportResult", () => {
         envInputs: [],
         warnings: ["Review API keys"],
       },
-      { targetLabel: "Imported Co (company-123)" },
+      {
+        targetLabel: "Imported Co (company-123)",
+        infoMessages: ["Using claude-local adapter"],
+      },
     );
 
     expect(rendered).toContain("Company");
     expect(rendered).toContain("3 agents total (1 created, 1 updated, 1 skipped)");
     expect(rendered).toContain("Agent results");
+    expect(rendered).toContain("Using claude-local adapter");
     expect(rendered).toContain("Review API keys");
   });
 });
@@ -419,5 +426,92 @@ describe("import selection catalog", () => {
     expect(selectedFiles).toContain("projects/alpha/notes.md");
     expect(selectedFiles).not.toContain("projects/alpha/issues/kickoff/TASK.md");
     expect(selectedFiles).not.toContain("projects/alpha/issues/kickoff/details.md");
+  });
+});
+
+describe("default adapter overrides", () => {
+  it("maps process-only imported agents to claude_local", () => {
+    const preview: CompanyPortabilityPreviewResult = {
+      include: {
+        company: false,
+        agents: true,
+        projects: false,
+        issues: false,
+        skills: false,
+      },
+      targetCompanyId: null,
+      targetCompanyName: null,
+      collisionStrategy: "rename",
+      selectedAgentSlugs: ["legacy-agent", "explicit-agent"],
+      plan: {
+        companyAction: "none",
+        agentPlans: [],
+        projectPlans: [],
+        issuePlans: [],
+      },
+      manifest: {
+        schemaVersion: 1,
+        generatedAt: "2026-03-23T18:20:00.000Z",
+        source: null,
+        includes: {
+          company: false,
+          agents: true,
+          projects: false,
+          issues: false,
+          skills: false,
+        },
+        company: null,
+        agents: [
+          {
+            slug: "legacy-agent",
+            name: "Legacy Agent",
+            path: "agents/legacy-agent/AGENT.md",
+            skills: [],
+            role: "agent",
+            title: null,
+            icon: null,
+            capabilities: null,
+            reportsToSlug: null,
+            adapterType: "process",
+            adapterConfig: {},
+            runtimeConfig: {},
+            permissions: {},
+            budgetMonthlyCents: 0,
+            metadata: null,
+          },
+          {
+            slug: "explicit-agent",
+            name: "Explicit Agent",
+            path: "agents/explicit-agent/AGENT.md",
+            skills: [],
+            role: "agent",
+            title: null,
+            icon: null,
+            capabilities: null,
+            reportsToSlug: null,
+            adapterType: "codex_local",
+            adapterConfig: {},
+            runtimeConfig: {},
+            permissions: {},
+            budgetMonthlyCents: 0,
+            metadata: null,
+          },
+        ],
+        skills: [],
+        projects: [],
+        issues: [],
+        envInputs: [],
+      },
+      files: {},
+      envInputs: [],
+      warnings: [],
+      errors: [],
+    };
+
+    expect(buildDefaultImportAdapterOverrides(preview)).toEqual({
+      "legacy-agent": {
+        adapterType: "claude_local",
+      },
+    });
   });
 });

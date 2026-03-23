@@ -50,6 +50,7 @@ interface CompanyImportOptions extends BaseClientOptions {
   agents?: string;
   collision?: CompanyCollisionMode;
   ref?: string;
+  paperclipUrl?: string;
   yes?: boolean;
   dryRun?: boolean;
 }
@@ -346,6 +347,37 @@ export function buildSelectedFilesFromImportSelection(
   return Array.from(selected).sort((left, right) => left.localeCompare(right));
 }
 
+export function buildDefaultImportAdapterOverrides(
+  preview: Pick<CompanyPortabilityPreviewResult, "manifest" | "selectedAgentSlugs">,
+): Record<string, { adapterType: string }> | undefined {
+  const selectedAgentSlugs = new Set(preview.selectedAgentSlugs);
+  const overrides = Object.fromEntries(
+    preview.manifest.agents
+      .filter((agent) => selectedAgentSlugs.size === 0 || selectedAgentSlugs.has(agent.slug))
+      .filter((agent) => agent.adapterType === "process")
+      .map((agent) => [
+        agent.slug,
+        {
+          // TODO: replace this temporary claude_local fallback with adapter selection in the import TUI.
+          adapterType: "claude_local",
+        },
+      ]),
+  );
+  return Object.keys(overrides).length > 0 ? overrides : undefined;
+}
+
+function buildDefaultImportAdapterMessages(
+  overrides: Record<string, { adapterType: string }> | undefined,
+): string[] {
+  if (!overrides) return [];
+  const adapterTypes = Array.from(new Set(Object.values(overrides).map((override) => override.adapterType)))
+    .map((adapterType) => adapterType.replace(/_/g, "-"));
+  const agentCount = Object.keys(overrides).length;
+  return [
+    `Using ${adapterTypes.join(", ")} adapter${adapterTypes.length === 1 ? "" : "s"} for ${agentCount} imported ${pluralize(agentCount, "agent")} without an explicit adapter.`,
+  ];
+}
+
 async function promptForImportSelection(preview: CompanyPortabilityPreviewResult): Promise<string[]> {
   const catalog = buildImportSelectionCatalog(preview);
   const state = buildDefaultImportSelectionState(catalog);
@@ -419,7 +451,7 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
     }
 
     const selection = await p.multiselect<string>({
-      message: `${getGroupLabel(group)} to import. Press enter to go back.`,
+      message: `${getGroupLabel(group)} to import. Space toggles, enter returns to the main menu.`,
       options: groupItems.map((item) => ({
         value: item.key,
         label: item.label,
@@ -544,6 +576,7 @@ export function renderCompanyImportPreview(
   meta: {
     sourceLabel: string;
     targetLabel: string;
+    infoMessages?: string[];
   },
 ): string {
   const lines: string[] = [
@@ -603,6 +636,7 @@ export function renderCompanyImportPreview(
     })),
   );
 
+  appendMessageBlock(lines, pc.cyan("Info"), meta.infoMessages ?? []);
   appendMessageBlock(lines, pc.yellow("Warnings"), preview.warnings);
   appendMessageBlock(lines, pc.red("Errors"), preview.errors);
 
@@ -611,7 +645,7 @@ export function renderCompanyImportPreview(
 
 export function renderCompanyImportResult(
   result: CompanyPortabilityImportResult,
-  meta: { targetLabel: string },
+  meta: { targetLabel: string; infoMessages?: string[] },
 ): string {
   const lines: string[] = [
     `${pc.bold("Target")}  ${meta.targetLabel}`,
@@ -637,6 +671,7 @@ export function renderCompanyImportResult(
     );
   }
 
+  appendMessageBlock(lines, pc.cyan("Info"), meta.infoMessages ?? []);
   appendMessageBlock(lines, pc.yellow("Warnings"), result.warnings);
 
   return lines.join("\n");
@@ -1059,10 +1094,14 @@ export function registerCompanyCommands(program: Command): void {
       .option("--agents <list>", "Comma-separated agent slugs to import, or all", "all")
       .option("--collision <mode>", "Collision strategy: rename | skip | replace", "rename")
       .option("--ref <value>", "Git ref to use for GitHub imports (branch, tag, or commit)")
+      .option("--paperclip-url <url>", "Alias for --api-base on this command")
       .option("--yes", "Accept the default import selection without opening the TUI", false)
       .option("--dry-run", "Run preview only without applying", false)
       .action(async (fromPathOrUrl: string, opts: CompanyImportOptions) => {
         try {
+          if (!opts.apiBase?.trim() && opts.paperclipUrl?.trim()) {
+            opts.apiBase = opts.paperclipUrl.trim();
+          }
           const ctx = resolveCommandContext(opts);
           const interactiveView = isInteractiveTerminal() && !ctx.json;
           const from = fromPathOrUrl.trim();
@@ -1149,7 +1188,7 @@ export function registerCompanyCommands(program: Command): void {
             selectedFiles = await promptForImportSelection(initialPreview);
           }
 
-          const payload = {
+          const previewPayload = {
             source: sourcePayload,
             include,
             target: targetPayload,
@@ -1157,17 +1196,14 @@ export function registerCompanyCommands(program: Command): void {
             collisionStrategy: collision,
             selectedFiles,
           };
-          const importApiPath = resolveCompanyImportApiPath({
-            dryRun: Boolean(opts.dryRun),
-            targetMode: targetPayload.mode,
-            companyId: targetPayload.mode === "existing_company" ? targetPayload.companyId : null,
-          });
+          const preview = await ctx.api.post<CompanyPortabilityPreviewResult>(previewApiPath, previewPayload);
+          if (!preview) {
+            throw new Error("Import preview returned no data.");
+          }
+          const adapterOverrides = buildDefaultImportAdapterOverrides(preview);
+          const adapterMessages = buildDefaultImportAdapterMessages(adapterOverrides);
 
           if (opts.dryRun) {
-            const preview = await ctx.api.post<CompanyPortabilityPreviewResult>(importApiPath, payload);
-            if (!preview) {
-              throw new Error("Import preview returned no data.");
-            }
             if (ctx.json) {
               printOutput(preview, { json: true });
             } else {
@@ -1176,6 +1212,7 @@ export function registerCompanyCommands(program: Command): void {
                 renderCompanyImportPreview(preview, {
                   sourceLabel,
                   targetLabel: formatTargetLabel(targetPayload, preview),
+                  infoMessages: adapterMessages,
                 }),
                 { interactive: interactiveView },
               );
@@ -1183,7 +1220,15 @@ export function registerCompanyCommands(program: Command): void {
             return;
           }
 
-          const imported = await ctx.api.post<CompanyPortabilityImportResult>(importApiPath, payload);
+          const importApiPath = resolveCompanyImportApiPath({
+            dryRun: false,
+            targetMode: targetPayload.mode,
+            companyId: targetPayload.mode === "existing_company" ? targetPayload.companyId : null,
+          });
+          const imported = await ctx.api.post<CompanyPortabilityImportResult>(importApiPath, {
+            ...previewPayload,
+            adapterOverrides,
+          });
           if (!imported) {
             throw new Error("Import request returned no data.");
           }
@@ -1194,6 +1239,7 @@ export function registerCompanyCommands(program: Command): void {
               "Import Result",
               renderCompanyImportResult(imported, {
                 targetLabel,
+                infoMessages: adapterMessages,
               }),
               { interactive: interactiveView },
             );
