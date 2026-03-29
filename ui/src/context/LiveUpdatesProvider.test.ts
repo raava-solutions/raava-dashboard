@@ -117,3 +117,77 @@ describe("LiveUpdatesProvider visible issue toast suppression", () => {
     ).toBe(true);
   });
 });
+
+describe("LiveUpdatesProvider run lifecycle toasts", () => {
+  it("does not build start or success toasts for agent runs", () => {
+    const queryClient = {
+      getQueryData: () => [],
+    };
+
+    expect(
+      __liveUpdatesTestUtils.buildAgentStatusToast(
+        {
+          agentId: "agent-1",
+          status: "running",
+        },
+        () => "CodexCoder",
+        queryClient as never,
+        "company-1",
+      ),
+    ).toBeNull();
+
+    expect(
+      __liveUpdatesTestUtils.buildRunStatusToast(
+        {
+          runId: "run-1",
+          agentId: "agent-1",
+          status: "succeeded",
+        },
+        () => "CodexCoder",
+      ),
+    ).toBeNull();
+  });
+
+  it("still builds failure toasts for agent errors and failed runs", () => {
+    const queryClient = {
+      getQueryData: () => [
+        {
+          id: "agent-1",
+          title: "Software Engineer",
+        },
+      ],
+    };
+
+    expect(
+      __liveUpdatesTestUtils.buildAgentStatusToast(
+        {
+          agentId: "agent-1",
+          status: "error",
+        },
+        () => "CodexCoder",
+        queryClient as never,
+        "company-1",
+      ),
+    ).toMatchObject({
+      title: "CodexCoder errored",
+      body: "Software Engineer",
+      tone: "error",
+    });
+
+    expect(
+      __liveUpdatesTestUtils.buildRunStatusToast(
+        {
+          runId: "run-1",
+          agentId: "agent-1",
+          status: "failed",
+          error: "boom",
+        },
+        () => "CodexCoder",
+      ),
+    ).toMatchObject({
+      title: "CodexCoder run failed",
+      body: "boom",
+      tone: "error",
+    });
+  });
+});
