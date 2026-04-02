@@ -25,6 +25,7 @@ interface FleetosValidationCacheEntry {
 
 const fleetosValidationCache = new Map<string, FleetosValidationCacheEntry>();
 const FLEETOS_CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_CACHE_SIZE = 1000;
 
 function getCachedFleetosValidation(apiKey: string): FleetosValidationCacheEntry | null {
   const entry = fleetosValidationCache.get(apiKey);
@@ -33,6 +34,9 @@ function getCachedFleetosValidation(apiKey: string): FleetosValidationCacheEntry
     fleetosValidationCache.delete(apiKey);
     return null;
   }
+  // Move to end for LRU ordering (Map preserves insertion order)
+  fleetosValidationCache.delete(apiKey);
+  fleetosValidationCache.set(apiKey, entry);
   return entry;
 }
 
@@ -40,6 +44,13 @@ function setCachedFleetosValidation(
   apiKey: string,
   data: { tenantId: string; tenantName: string; companyId: string },
 ): void {
+  // Evict oldest entry if at capacity
+  if (fleetosValidationCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = fleetosValidationCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      fleetosValidationCache.delete(oldestKey);
+    }
+  }
   fleetosValidationCache.set(apiKey, {
     ...data,
     expiresAt: Date.now() + FLEETOS_CACHE_TTL_MS,
@@ -54,7 +65,7 @@ interface ActorMiddlewareOptions {
 
 export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
   const boardAuth = boardAuthService(db);
-  return async (req, _res, next) => {
+  return async (req, res, next) => {
     req.actor =
       opts.deploymentMode === "local_trusted"
         ? { type: "board", userId: "local-board", isInstanceAdmin: true, source: "local_implicit" }
@@ -124,12 +135,17 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
             companyIds: [tenant.companyId],
             isInstanceAdmin: true,
             fleetosTenantId: tenant.tenantId,
+            fleetosApiKey,
             runId: runIdHeader ?? undefined,
             source: "fleetos_api_key",
           };
           next();
           return;
         }
+
+        // Fail-closed: API key was present but validation failed — reject immediately
+        res.status(401).json({ error: "Invalid or expired FleetOS API key" });
+        return;
       }
     }
 

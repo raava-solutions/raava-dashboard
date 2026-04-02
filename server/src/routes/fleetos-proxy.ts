@@ -9,7 +9,7 @@
  * Tenant isolation (RAA-288) is automatic — FleetOS scopes results by API key.
  */
 
-import { Router } from "express";
+import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import { assertBoard } from "./authz.js";
 import {
@@ -18,15 +18,17 @@ import {
   type FleetContainer,
   type FleetHealth,
 } from "../services/fleetos-client.js";
+import { logActivity } from "../services/activity-log.js";
+import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getClient() {
-  const apiKey = process.env.FLEETOS_API_KEY ?? "";
+function getClientFromRequest(req: Request) {
+  const apiKey = req.actor.fleetosApiKey;
   if (!apiKey) {
-    throw new FleetOSProxyError("FLEETOS_API_KEY is not configured", 500, null);
+    throw new FleetOSProxyError("No FleetOS API key in session", 401, null);
   }
   return createFleetOSClient(apiKey);
 }
@@ -61,14 +63,14 @@ function mergeContainerAndHealth(container: FleetContainer, health: FleetHealth 
 // Route factory
 // ---------------------------------------------------------------------------
 
-export function fleetosProxyRoutes(_db: Db) {
+export function fleetosProxyRoutes(db: Db) {
   const router = Router();
 
   // --- List all containers ---
   router.get("/fleetos/containers", async (req, res) => {
     assertBoard(req);
     try {
-      const client = getClient();
+      const client = getClientFromRequest(req);
       const containers = await client.listContainers();
 
       // Best-effort health fetch for each container (don't fail if one errors)
@@ -104,7 +106,7 @@ export function fleetosProxyRoutes(_db: Db) {
     assertBoard(req);
     const { containerId } = req.params;
     try {
-      const client = getClient();
+      const client = getClientFromRequest(req);
       const container = await client.getContainer(containerId!);
       let health: FleetHealth | null = null;
       if (container.status === "running") {
@@ -132,7 +134,7 @@ export function fleetosProxyRoutes(_db: Db) {
     assertBoard(req);
     const { containerId } = req.params;
     try {
-      const client = getClient();
+      const client = getClientFromRequest(req);
       const health = await client.getHealth(containerId!);
       res.json(health);
     } catch (err) {
@@ -152,7 +154,7 @@ export function fleetosProxyRoutes(_db: Db) {
     assertBoard(req);
     const { containerId } = req.params;
     try {
-      const client = getClient();
+      const client = getClientFromRequest(req);
       const agentProcess = await client.getAgentProcess(containerId!);
       res.json(agentProcess);
     } catch (err) {
@@ -178,7 +180,7 @@ export function fleetosProxyRoutes(_db: Db) {
     }
 
     try {
-      const client = getClient();
+      const client = getClientFromRequest(req);
       let container: FleetContainer;
       switch (action) {
         case "start":
@@ -194,6 +196,23 @@ export function fleetosProxyRoutes(_db: Db) {
           res.status(400).json({ error: `Invalid action: ${action}` });
           return;
       }
+
+      // Audit log for lifecycle actions
+      const companyId = req.actor.companyId;
+      if (companyId) {
+        logActivity(db, {
+          companyId,
+          actorType: "user",
+          actorId: req.actor.userId ?? "unknown",
+          action: `fleetos.container.${action}`,
+          entityType: "fleetos_container",
+          entityId: containerId!,
+          details: { action, containerName: container.name },
+        }).catch((err) => {
+          logger.warn({ err, containerId, action }, "Failed to log FleetOS lifecycle audit entry");
+        });
+      }
+
       res.json(container);
     } catch (err) {
       if (err instanceof FleetOSProxyError) {

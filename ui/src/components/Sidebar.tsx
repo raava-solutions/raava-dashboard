@@ -23,6 +23,7 @@ import { useCompany } from "../context/CompanyContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
+import { healthApi } from "../api/health";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
 
@@ -37,6 +38,13 @@ export function Sidebar() {
     refetchInterval: 10_000,
   });
   const liveRunCount = liveRuns?.length ?? 0;
+  const { data: health } = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const isFleetosMode = health?.deploymentMode === "fleetos";
 
   function openSearch() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
@@ -108,9 +116,11 @@ export function Sidebar() {
 
         <SidebarAgents />
 
-        <SidebarSection label="Infrastructure">
-          <SidebarNavItem to="/fleet" label="Fleet" icon={Server} />
-        </SidebarSection>
+        {isFleetosMode && (
+          <SidebarSection label="Infrastructure">
+            <SidebarNavItem to="/fleet" label="Fleet" icon={Server} />
+          </SidebarSection>
+        )}
 
         <SidebarSection label="Company">
           <SidebarNavItem to="/org" label="Org" icon={Network} />

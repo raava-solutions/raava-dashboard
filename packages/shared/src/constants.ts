@@ -4,6 +4,11 @@ export type CompanyStatus = (typeof COMPANY_STATUSES)[number];
 export const DEPLOYMENT_MODES = ["local_trusted", "authenticated", "fleetos"] as const;
 export type DeploymentMode = (typeof DEPLOYMENT_MODES)[number];
 
+/** Returns true for deployment modes that maintain per-user/per-tenant sessions. */
+export function isSessionAwareDeployment(mode: string): boolean {
+  return mode === "authenticated" || mode === "fleetos";
+}
+
 export const DEPLOYMENT_EXPOSURES = ["private", "public"] as const;
 export type DeploymentExposure = (typeof DEPLOYMENT_EXPOSURES)[number];
 

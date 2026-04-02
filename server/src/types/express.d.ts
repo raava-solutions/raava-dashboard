@@ -13,6 +13,7 @@ declare global {
         keyId?: string;
         runId?: string;
         fleetosTenantId?: string;
+        fleetosApiKey?: string;
         source?: "local_implicit" | "session" | "board_key" | "agent_key" | "agent_jwt" | "fleetos_api_key" | "none";
       };
     }

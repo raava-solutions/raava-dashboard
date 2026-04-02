@@ -2,40 +2,74 @@ import { Router } from "express";
 import { logger } from "../middleware/logger.js";
 
 /**
+ * Error thrown when the FleetOS upstream is unreachable or returns a server error.
+ * Distinguishes infrastructure failures from authentication rejections.
+ */
+export class FleetosUpstreamError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number | null,
+  ) {
+    super(message);
+    this.name = "FleetosUpstreamError";
+  }
+}
+
+/**
  * Validate a FleetOS API key by calling the FleetOS backend.
- * Returns tenant info on success, null on failure.
+ * Returns tenant info on success, null when auth is rejected (401/403).
+ * Throws FleetosUpstreamError for 5xx / network errors so callers can
+ * distinguish "bad key" from "FleetOS is down".
  */
 async function validateFleetosApiKey(
   fleetosApiUrl: string,
   apiKey: string,
 ): Promise<{ tenantId: string; tenantName: string; companyId: string } | null> {
+  let res: Response;
   try {
-    const res = await fetch(`${fleetosApiUrl}/api/tenants`, {
+    res = await fetch(`${fleetosApiUrl}/api/tenants`, {
       method: "GET",
       headers: {
         "X-API-Key": apiKey,
         Accept: "application/json",
       },
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      id?: string;
-      tenant_id?: string;
-      name?: string;
-      tenant_name?: string;
-      company_id?: string;
-    };
-    const tenantId = data.tenant_id ?? data.id;
-    const tenantName = data.tenant_name ?? data.name ?? "FleetOS Tenant";
-    // FleetOS tenant_id maps to a Paperclip companyId. If the response includes
-    // a company_id field we use it; otherwise we derive from the tenant_id.
-    if (!tenantId) return null;
-    const companyId = data.company_id ?? tenantId;
-    return { tenantId, tenantName, companyId };
   } catch (err) {
-    logger.warn({ err }, "FleetOS API key validation request failed");
-    return null;
+    // Network-level failure (DNS, connection refused, timeout, etc.)
+    throw new FleetosUpstreamError(
+      `FleetOS API unreachable: ${err instanceof Error ? err.message : String(err)}`,
+      null,
+    );
   }
+
+  // 401/403 = the key is invalid or revoked — return null (auth rejected)
+  if (res.status === 401 || res.status === 403) return null;
+
+  // 5xx = FleetOS server error — bubble up as upstream failure
+  if (res.status >= 500) {
+    throw new FleetosUpstreamError(
+      `FleetOS returned server error ${res.status}`,
+      res.status,
+    );
+  }
+
+  // Other non-OK (e.g. 404, 400) — treat as auth invalid
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as {
+    id?: string;
+    tenant_id?: string;
+    name?: string;
+    tenant_name?: string;
+    company_id?: string;
+  };
+  const tenantId = data.tenant_id ?? data.id;
+  const tenantName = data.tenant_name ?? data.name ?? "FleetOS Tenant";
+  // FleetOS tenant_id maps to a Paperclip companyId. If the response includes
+  // a company_id field we use it; otherwise we derive from the tenant_id.
+  if (!tenantId) return null;
+  const companyId = data.company_id ?? tenantId;
+  return { tenantId, tenantName, companyId };
 }
 
 export interface FleetosAuthRoutesOptions {
@@ -56,7 +90,17 @@ export function fleetosAuthRoutes(opts: FleetosAuthRoutesOptions) {
       return;
     }
 
-    const tenant = await validateFleetosApiKey(opts.fleetosApiUrl, apiKey);
+    let tenant: Awaited<ReturnType<typeof validateFleetosApiKey>>;
+    try {
+      tenant = await validateFleetosApiKey(opts.fleetosApiUrl, apiKey);
+    } catch (err) {
+      if (err instanceof FleetosUpstreamError) {
+        logger.error({ err }, "FleetOS upstream failure during login");
+        res.status(502).json({ error: "FleetOS service unavailable", detail: err.message });
+        return;
+      }
+      throw err;
+    }
     if (!tenant) {
       res.status(401).json({ error: "Invalid FleetOS API key" });
       return;

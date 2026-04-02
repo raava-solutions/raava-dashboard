@@ -55,9 +55,12 @@ docker compose -f docker-compose.production.yml run --rm certbot \
   --email admin@raava.io --agree-tos --no-eff-email \
   -d demo.raava.io
 
-# Copy certs into the expected location
-cp -L /etc/letsencrypt/live/demo.raava.io/fullchain.pem live/fullchain.pem
-cp -L /etc/letsencrypt/live/demo.raava.io/privkey.pem live/privkey.pem
+# Copy certs into the expected location.
+# The certbot container mounts ./nginx/ssl as /etc/letsencrypt, so
+# certs appear on the host at ./nginx/ssl/live/<domain>/. Copy them
+# to the flat live/ directory that nginx reads from:
+cp -L nginx/ssl/live/demo.raava.io/fullchain.pem nginx/ssl/live/fullchain.pem
+cp -L nginx/ssl/live/demo.raava.io/privkey.pem nginx/ssl/live/privkey.pem
 
 # Reload nginx
 docker compose -f docker-compose.production.yml exec nginx nginx -s reload

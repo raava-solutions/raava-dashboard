@@ -4,7 +4,10 @@ services:
       context: ..
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgres://raava:${DB_PASSWORD}@db:5432/raava_dashboard
+      # NOTE: If DB_PASSWORD contains special characters (e.g. @, #, %, /),
+      # you must percent-encode them in the connection string. Consider using
+      # only alphanumeric passwords to avoid issues.
+      DATABASE_URL: postgres://raava:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/raava_dashboard
       HOST: "0.0.0.0"
       PORT: "3100"
       SERVE_UI: "true"
@@ -30,7 +33,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: raava
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_DB: raava_dashboard
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -65,7 +68,17 @@ services:
     volumes:
       - ./nginx/ssl:/etc/letsencrypt
       - certbot-webroot:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
+    # NOTE: After certbot renews certs, nginx must reload to pick them up.
+    # Because certbot and nginx run in separate containers, certbot cannot
+    # directly signal nginx. The --deploy-hook below copies renewed certs to
+    # the flat /etc/letsencrypt/live/ directory that nginx reads from. You
+    # must still restart or reload nginx after renewal, e.g. via a cron job:
+    #   docker compose -f docker-compose.production.yml exec nginx nginx -s reload
+    entrypoint: >-
+      /bin/sh -c 'trap exit TERM; while :; do
+        certbot renew --deploy-hook "cp -Lf /etc/letsencrypt/live/*/fullchain.pem /etc/letsencrypt/live/fullchain.pem && cp -Lf /etc/letsencrypt/live/*/privkey.pem /etc/letsencrypt/live/privkey.pem";
+        sleep 12h & wait $${!};
+      done'
 
 volumes:
   pgdata:

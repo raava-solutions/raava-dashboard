@@ -151,6 +151,21 @@ export function AuthPage() {
     );
   }
 
+  if (healthQuery.error) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <p className="text-sm text-destructive">
+            {healthQuery.error instanceof Error ? healthQuery.error.message : "Failed to load app configuration"}
+          </p>
+          <Button variant="outline" size="sm" onClick={() => healthQuery.refetch()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 flex bg-background">
       {/* Left half — form */}

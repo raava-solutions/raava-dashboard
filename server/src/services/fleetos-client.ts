@@ -106,7 +106,13 @@ export class FleetOSProxyClient {
         );
       }
 
-      return (await res.json()) as T;
+      // Guard against 204 No Content or empty bodies — res.json() would throw
+      if (res.status === 204 || res.headers.get("content-length") === "0") {
+        return undefined as unknown as T;
+      }
+      const text = await res.text();
+      if (!text) return undefined as unknown as T;
+      return JSON.parse(text) as T;
     } catch (err) {
       if (err instanceof FleetOSProxyError) throw err;
       throw new FleetOSProxyError(

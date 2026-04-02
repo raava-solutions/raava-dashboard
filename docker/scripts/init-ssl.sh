@@ -26,7 +26,7 @@ Examples:
   $(basename "$0") --letsencrypt --domain demo.raava.io --email admin@raava.io
   $(basename "$0") --letsencrypt --domain demo.raava.io --email admin@raava.io --staging
 EOF
-  exit 0
+  exit "${1:-0}"
 }
 
 MODE=""
@@ -45,11 +45,19 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --domain)
-      DOMAIN="$2"
+      DOMAIN="${2:-}"
+      if [[ -z "$DOMAIN" ]]; then
+        echo "Error: --domain requires a value"
+        usage 1
+      fi
       shift 2
       ;;
     --email)
-      EMAIL="$2"
+      EMAIL="${2:-}"
+      if [[ -z "$EMAIL" ]]; then
+        echo "Error: --email requires a value"
+        usage 1
+      fi
       shift 2
       ;;
     --staging)
@@ -61,7 +69,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "Error: Unknown option $1"
-      usage
+      usage 1
       ;;
   esac
 done
@@ -69,7 +77,7 @@ done
 if [[ -z "$MODE" ]]; then
   echo "Error: Must specify --self-signed or --letsencrypt"
   echo ""
-  usage
+  usage 1
 fi
 
 mkdir -p "$LIVE_DIR"

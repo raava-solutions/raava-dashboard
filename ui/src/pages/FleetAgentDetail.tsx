@@ -235,6 +235,9 @@ export function FleetAgentDetail() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.fleet.health(containerId!) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.fleet.containers });
     },
+    onError: () => {
+      setConfirmAction(null);
+    },
   });
 
   useEffect(() => {

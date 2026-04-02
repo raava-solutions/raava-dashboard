@@ -99,6 +99,12 @@ function ContainerCard({ container }: { container: FleetContainer }) {
         </div>
       )}
 
+      {!h && container.status === "running" && (
+        <div className="mt-4 flex items-center justify-center py-3">
+          <span className="text-xs text-muted-foreground">Health unavailable</span>
+        </div>
+      )}
+
       {!h && container.status !== "running" && (
         <div className="mt-4 flex items-center justify-center py-3">
           <span className="text-xs text-muted-foreground">Container is {container.status}</span>
@@ -194,50 +200,53 @@ export function FleetOverview() {
       </div>
 
       {/* Summary gauges */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-          <Cpu className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <p className="text-lg font-semibold">
-              {running.length > 0
-                ? Math.round(
-                    running.reduce((sum, c) => sum + (c.health?.cpu_percent ?? 0), 0) / running.length,
-                  )
-                : 0}
-              %
-            </p>
-            <p className="text-xs text-muted-foreground">Avg CPU</p>
+      {(() => {
+        const withHealth = running.filter((c) => c.health != null);
+        const healthCount = withHealth.length;
+        return (
+          <div className="grid grid-cols-3 gap-4">
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+              <Cpu className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-lg font-semibold">
+                  {healthCount > 0
+                    ? `${Math.round(
+                        withHealth.reduce((sum, c) => sum + c.health!.cpu_percent, 0) / healthCount,
+                      )}%`
+                    : "--"}
+                </p>
+                <p className="text-xs text-muted-foreground">Avg CPU</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+              <MemoryStick className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-lg font-semibold">
+                  {healthCount > 0
+                    ? `${Math.round(
+                        withHealth.reduce((sum, c) => sum + c.health!.mem_percent, 0) / healthCount,
+                      )}%`
+                    : "--"}
+                </p>
+                <p className="text-xs text-muted-foreground">Avg Memory</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+              <HardDrive className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-lg font-semibold">
+                  {healthCount > 0
+                    ? `${Math.round(
+                        withHealth.reduce((sum, c) => sum + c.health!.disk_percent, 0) / healthCount,
+                      )}%`
+                    : "--"}
+                </p>
+                <p className="text-xs text-muted-foreground">Avg Disk</p>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-          <MemoryStick className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <p className="text-lg font-semibold">
-              {running.length > 0
-                ? Math.round(
-                    running.reduce((sum, c) => sum + (c.health?.mem_percent ?? 0), 0) / running.length,
-                  )
-                : 0}
-              %
-            </p>
-            <p className="text-xs text-muted-foreground">Avg Memory</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
-          <HardDrive className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <p className="text-lg font-semibold">
-              {running.length > 0
-                ? Math.round(
-                    running.reduce((sum, c) => sum + (c.health?.disk_percent ?? 0), 0) / running.length,
-                  )
-                : 0}
-              %
-            </p>
-            <p className="text-xs text-muted-foreground">Avg Disk</p>
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Container grid */}
       {running.length > 0 && (

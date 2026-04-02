@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
-import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import { isSessionAwareDeployment, type DeploymentExposure, type DeploymentMode } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
@@ -78,6 +78,8 @@ export async function createApp(
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
   },
 ) {
+  const fleetosApiUrl = process.env.FLEETOS_API_URL ?? "http://localhost:8400";
+
   const app = express();
 
   app.use(express.json({
@@ -89,7 +91,7 @@ export async function createApp(
   }));
   app.use(httpLogger);
   const privateHostnameGateEnabled =
-    opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private";
+    isSessionAwareDeployment(opts.deploymentMode) && opts.deploymentExposure === "private";
   const privateHostnameAllowSet = resolvePrivateHostnameAllowSet({
     allowedHostnames: opts.allowedHostnames,
     bindHost: opts.bindHost,
@@ -105,7 +107,7 @@ export async function createApp(
     actorMiddleware(db, {
       deploymentMode: opts.deploymentMode,
       resolveSession: opts.resolveSession,
-      fleetosApiUrl: process.env.FLEETOS_API_URL,
+      fleetosApiUrl,
     }),
   );
   app.get("/api/auth/get-session", (req, res) => {
@@ -158,7 +160,6 @@ export async function createApp(
   api.use(dashboardRoutes(db));
   api.use(sidebarBadgeRoutes(db));
   api.use(instanceSettingsRoutes(db));
-  const fleetosApiUrl = process.env.FLEETOS_API_URL ?? "http://localhost:8400";
   api.use("/fleetos", fleetosAuthRoutes({ fleetosApiUrl }));
   api.use(fleetosProxyRoutes(db));
   const hostServicesDisposers = new Map<string, () => void>();
