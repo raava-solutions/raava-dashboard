@@ -79,6 +79,15 @@ import {
   agentConfigurationDoc as hermesAgentConfigurationDoc,
   models as hermesModels,
 } from "hermes-paperclip-adapter";
+import {
+  execute as hermesFleetosExecute,
+  testEnvironment as hermesFleetosTestEnvironment,
+  listSkills as hermesFleetosListSkills,
+} from "@raava/adapter-hermes-fleetos/server";
+import {
+  agentConfigurationDoc as hermesFleetosAgentConfigurationDoc,
+  models as hermesFleetosModels,
+} from "@raava/adapter-hermes-fleetos";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
 
@@ -188,6 +197,21 @@ const hermesLocalAdapter: ServerAdapterModule = {
   detectModel: () => detectModelFromHermes(),
 };
 
+const hermesFleetosAdapter: ServerAdapterModule = {
+  type: "hermes_fleetos",
+  execute: hermesFleetosExecute,
+  testEnvironment: hermesFleetosTestEnvironment,
+  listSkills: hermesFleetosListSkills,
+  models: hermesFleetosModels,
+  supportsLocalAgentJwt: false,
+  agentConfigurationDoc: hermesFleetosAgentConfigurationDoc,
+  detectModel: async () => {
+    // detectModel requires adapter config which is not available at the module level.
+    // This is a placeholder — detection works via the per-agent test flow.
+    return null;
+  },
+};
+
 const adaptersByType = new Map<string, ServerAdapterModule>(
   [
     claudeLocalAdapter,
@@ -198,6 +222,7 @@ const adaptersByType = new Map<string, ServerAdapterModule>(
     geminiLocalAdapter,
     openclawGatewayAdapter,
     hermesLocalAdapter,
+    hermesFleetosAdapter,
     processAdapter,
     httpAdapter,
   ].map((a) => [a.type, a]),

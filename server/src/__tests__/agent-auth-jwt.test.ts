@@ -45,8 +45,8 @@ describe("agent local JWT", () => {
       company_id: "company-1",
       adapter_type: "claude_local",
       run_id: "run-1",
-      iss: "paperclip",
-      aud: "paperclip-api",
+      iss: "raava",
+      aud: "raava-api",
     });
   });
 
