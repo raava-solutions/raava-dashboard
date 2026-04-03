@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Layout } from "./components/Layout";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { authApi } from "./api/auth";
+import { fleetosAuthApi } from "./api/fleetos";
 import { healthApi } from "./api/health";
 import { Dashboard } from "./pages/Dashboard";
 import { Companies } from "./pages/Companies";
@@ -97,14 +98,26 @@ function CloudAccessGate() {
   const isAuthenticatedMode = healthQuery.data?.deploymentMode === "authenticated";
   const isFleetosMode = healthQuery.data?.deploymentMode === "fleetos";
   const requiresSession = isAuthenticatedMode || isFleetosMode;
+
+  // BetterAuth session (for authenticated mode)
   const sessionQuery = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
-    enabled: requiresSession,
+    enabled: isAuthenticatedMode,
     retry: false,
   });
 
-  if (healthQuery.isLoading || (requiresSession && sessionQuery.isLoading)) {
+  // FleetOS session (for fleetos mode) — checks the fleetos_session cookie
+  const fleetosSessionQuery = useQuery({
+    queryKey: ["fleetos", "me"],
+    queryFn: () => fleetosAuthApi.me(),
+    enabled: isFleetosMode,
+    retry: false,
+  });
+
+  const activeSessionQuery = isFleetosMode ? fleetosSessionQuery : sessionQuery;
+
+  if (healthQuery.isLoading || (requiresSession && activeSessionQuery.isLoading)) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
   }
 
@@ -120,7 +133,7 @@ function CloudAccessGate() {
     return <BootstrapPendingPage hasActiveInvite={healthQuery.data.bootstrapInviteActive} />;
   }
 
-  if (requiresSession && !sessionQuery.data) {
+  if (requiresSession && !activeSessionQuery.data) {
     const next = encodeURIComponent(`${location.pathname}${location.search}`);
     return <Navigate to={`/auth?next=${next}`} replace />;
   }
