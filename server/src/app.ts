@@ -3,7 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
-import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import { isSessionAwareDeployment, type DeploymentExposure, type DeploymentMode } from "@paperclipai/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
@@ -30,6 +30,8 @@ import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
+import { fleetosAuthRoutes } from "./routes/fleetos-auth.js";
+import { fleetosProxyRoutes } from "./routes/fleetos-proxy.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
@@ -57,6 +59,26 @@ export function resolveViteHmrPort(serverPort: number): number {
   return Math.max(1_024, serverPort - 10_000);
 }
 
+/**
+ * Create and configure the Paperclip Express application with API routes, UI serving modes, authentication/session handling, and plugin host/job infrastructure.
+ *
+ * @param db - Database handle used by routes, plugin services, and stores
+ * @param opts.uiMode - UI serving mode: `"static"` to serve prebuilt assets or `"vite-dev"` for Vite middleware
+ * @param opts.serverPort - Server port used to compute Vite HMR ports when running in `vite-dev` mode
+ * @param opts.storageService - Storage service used by routes that manage uploaded assets and exports
+ * @param opts.deploymentMode - Deployment mode influencing auth/session behavior
+ * @param opts.deploymentExposure - Deployment exposure; affects hostname gating when set to `"private"`
+ * @param opts.allowedHostnames - Hostnames allowed by the private-hostname guard
+ * @param opts.bindHost - Host to bind HMR/Web dev server and used for hostname allowlist resolution
+ * @param opts.authReady - Whether authentication subsystems are ready; passed to health checks
+ * @param opts.companyDeletionEnabled - Feature flag enabling company deletion; passed to health checks
+ * @param opts.instanceId - Optional instance identifier exposed to plugins (defaults to `"default"`)
+ * @param opts.hostVersion - Optional host version string exposed to plugins (defaults to `"0.0.0"`)
+ * @param opts.localPluginDir - Optional local plugin directory override (defaults to bundled location)
+ * @param opts.betterAuthHandler - Optional Express handler to mount at `/api/auth/*` for alternative auth flows
+ * @param opts.resolveSession - Optional session resolver used by actor middleware to resolve sessions from requests
+ * @returns The configured Express application ready to be mounted or started
+ */
 export async function createApp(
   db: Db,
   opts: {
@@ -74,8 +96,11 @@ export async function createApp(
     localPluginDir?: string;
     betterAuthHandler?: express.RequestHandler;
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+    fleetosApiUrl?: string;
   },
 ) {
+  const fleetosApiUrl = opts.fleetosApiUrl ?? "http://localhost:8400";
+
   const app = express();
 
   app.use(express.json({
@@ -87,7 +112,7 @@ export async function createApp(
   }));
   app.use(httpLogger);
   const privateHostnameGateEnabled =
-    opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private";
+    isSessionAwareDeployment(opts.deploymentMode) && opts.deploymentExposure === "private";
   const privateHostnameAllowSet = resolvePrivateHostnameAllowSet({
     allowedHostnames: opts.allowedHostnames,
     bindHost: opts.bindHost,
@@ -103,6 +128,7 @@ export async function createApp(
     actorMiddleware(db, {
       deploymentMode: opts.deploymentMode,
       resolveSession: opts.resolveSession,
+      fleetosApiUrl,
     }),
   );
   app.get("/api/auth/get-session", (req, res) => {
@@ -155,6 +181,8 @@ export async function createApp(
   api.use(dashboardRoutes(db));
   api.use(sidebarBadgeRoutes(db));
   api.use(instanceSettingsRoutes(db));
+  api.use("/fleetos", fleetosAuthRoutes({ fleetosApiUrl }));
+  api.use(fleetosProxyRoutes(db, fleetosApiUrl));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);

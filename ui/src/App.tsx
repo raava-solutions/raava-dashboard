@@ -42,6 +42,8 @@ import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
+import { FleetOverview } from "./pages/FleetOverview";
+import { FleetAgentDetail } from "./pages/FleetAgentDetail";
 import { NotFoundPage } from "./pages/NotFound";
 import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
@@ -67,6 +69,13 @@ function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: b
   );
 }
 
+/**
+ * Guards routing based on instance health and required authentication state.
+ *
+ * Renders a loading indicator while health or session data are loading, an error message if the health check fails, the bootstrap pending page when instance bootstrap is required, or redirects to the auth flow when a session is required but missing. When none of those conditions apply, renders the nested routes.
+ *
+ * @returns A React element: either a loading or error message, the bootstrap pending UI, a redirect to `/auth?next=...`, or the nested routes via `<Outlet />`.
+ */
 function CloudAccessGate() {
   const location = useLocation();
   const healthQuery = useQuery({
@@ -75,7 +84,7 @@ function CloudAccessGate() {
     retry: false,
     refetchInterval: (query) => {
       const data = query.state.data as
-        | { deploymentMode?: "local_trusted" | "authenticated"; bootstrapStatus?: "ready" | "bootstrap_pending" }
+        | { deploymentMode?: "local_trusted" | "authenticated" | "fleetos"; bootstrapStatus?: "ready" | "bootstrap_pending" }
         | undefined;
       return data?.deploymentMode === "authenticated" && data.bootstrapStatus === "bootstrap_pending"
         ? 2000
@@ -85,14 +94,16 @@ function CloudAccessGate() {
   });
 
   const isAuthenticatedMode = healthQuery.data?.deploymentMode === "authenticated";
+  const isFleetosMode = healthQuery.data?.deploymentMode === "fleetos";
+  const requiresSession = isAuthenticatedMode || isFleetosMode;
   const sessionQuery = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
-    enabled: isAuthenticatedMode,
+    enabled: requiresSession,
     retry: false,
   });
 
-  if (healthQuery.isLoading || (isAuthenticatedMode && sessionQuery.isLoading)) {
+  if (healthQuery.isLoading || (requiresSession && sessionQuery.isLoading)) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
   }
 
@@ -108,7 +119,7 @@ function CloudAccessGate() {
     return <BootstrapPendingPage hasActiveInvite={healthQuery.data.bootstrapInviteActive} />;
   }
 
-  if (isAuthenticatedMode && !sessionQuery.data) {
+  if (requiresSession && !sessionQuery.data) {
     const next = encodeURIComponent(`${location.pathname}${location.search}`);
     return <Navigate to={`/auth?next=${next}`} replace />;
   }
@@ -116,6 +127,15 @@ function CloudAccessGate() {
   return <Outlet />;
 }
 
+/**
+ * Route definitions for the company-prefixed board area.
+ *
+ * Includes the dashboard, onboarding, company settings, agents (multiple alias routes and detail routes),
+ * projects, issues (alias redirects), routines, goals, approvals, inbox, fleet routes, plugin pages,
+ * a design guide, test UX runs, and a scoped 404 for board routes.
+ *
+ * @returns A JSX fragment containing Route elements to be nested under a company-prefixed layout
+ */
 function boardRoutes() {
   return (
     <>
@@ -140,6 +160,15 @@ function boardRoutes() {
       <Route path="agents/:agentId" element={<AgentDetail />} />
       <Route path="agents/:agentId/:tab" element={<AgentDetail />} />
       <Route path="agents/:agentId/runs/:runId" element={<AgentDetail />} />
+      {/* Fleet routes live under the company prefix because Layout requires
+          company context (sidebar, nav). Unprefixed /fleet paths are handled
+          by UnprefixedBoardRedirect above which prepends the active prefix.
+          Access is gated by: (1) CloudAccessGate requires auth in fleetos mode,
+          (2) Sidebar hides Fleet nav in non-fleetos mode, (3) proxy routes
+          require FleetOS API key on the actor. Non-fleetos users hitting these
+          routes directly get a 401 from the proxy. */}
+      <Route path="fleet" element={<FleetOverview />} />
+      <Route path="fleet/:containerId" element={<FleetAgentDetail />} />
       <Route path="projects" element={<Projects />} />
       <Route path="projects/:projectId" element={<ProjectDetail />} />
       <Route path="projects/:projectId/overview" element={<ProjectDetail />} />
@@ -301,6 +330,15 @@ function NoCompaniesStartPage() {
   );
 }
 
+/**
+ * Defines the application's top-level route structure and mounts the onboarding wizard.
+ *
+ * Renders public routes (auth, invites, CLI, board-claim), a protected group guarded by the cloud access gate
+ * (companyless routes, instance settings, unprefixed board redirects, company-prefixed board routes, and a global 404),
+ * and the persistent OnboardingWizard component.
+ *
+ * @returns The top-level React element that provides the app's routing and global onboarding UI.
+ */
 export function App() {
   return (
     <>
@@ -335,6 +373,8 @@ export function App() {
           <Route path="agents/:agentId" element={<UnprefixedBoardRedirect />} />
           <Route path="agents/:agentId/:tab" element={<UnprefixedBoardRedirect />} />
           <Route path="agents/:agentId/runs/:runId" element={<UnprefixedBoardRedirect />} />
+          <Route path="fleet" element={<UnprefixedBoardRedirect />} />
+          <Route path="fleet/:containerId" element={<UnprefixedBoardRedirect />} />
           <Route path="projects" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId" element={<UnprefixedBoardRedirect />} />
           <Route path="projects/:projectId/overview" element={<UnprefixedBoardRedirect />} />

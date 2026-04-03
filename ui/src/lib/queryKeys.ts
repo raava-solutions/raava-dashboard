@@ -133,6 +133,12 @@ export const queryKeys = {
   skills: {
     available: ["skills", "available"] as const,
   },
+  fleet: {
+    containers: ["fleet", "containers"] as const,
+    container: (id: string) => ["fleet", "container", id] as const,
+    health: (id: string) => ["fleet", "health", id] as const,
+    agentProcess: (id: string) => ["fleet", "agent-process", id] as const,
+  },
   plugins: {
     all: ["plugins"] as const,
     examples: ["plugins", "examples"] as const,

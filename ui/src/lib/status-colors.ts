@@ -47,6 +47,11 @@ export const statusBadge: Record<string, string> = {
   idle: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300",
   archived: "bg-muted text-muted-foreground",
 
+  // FleetOS container statuses
+  stopped: "bg-muted text-muted-foreground",
+  frozen: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+  provisioning: "bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300",
+
   // Goal statuses
   planned: "bg-muted text-muted-foreground",
   achieved: "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300",

@@ -73,8 +73,14 @@ export interface Config {
   heartbeatSchedulerEnabled: boolean;
   heartbeatSchedulerIntervalMs: number;
   companyDeletionEnabled: boolean;
+  fleetosApiUrl?: string;
 }
 
+/**
+ * Load and resolve runtime configuration by combining environment variables, the optional config file, and sensible defaults.
+ *
+ * @returns A fully populated `Config` object containing resolved settings for deployment/server, authentication, database and backups, UI, secrets, storage, heartbeat scheduler, company deletion, and the optional `fleetosApiUrl`.
+ */
 export function loadConfig(): Config {
   const fileConfig = readConfigFile();
   const fileDatabaseMode =
@@ -213,6 +219,8 @@ export function loadConfig(): Config {
       resolveDefaultBackupDir(),
   );
 
+  const fleetosApiUrl = process.env.FLEETOS_API_URL ?? undefined;
+
   return {
     deploymentMode,
     deploymentExposure,
@@ -255,5 +263,6 @@ export function loadConfig(): Config {
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
     companyDeletionEnabled,
+    fleetosApiUrl,
   };
 }

@@ -11,7 +11,9 @@ import {
   Boxes,
   Repeat,
   Settings,
+  Server,
 } from "lucide-react";
+import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
@@ -22,9 +24,17 @@ import { useCompany } from "../context/CompanyContext";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { useInboxBadge } from "../hooks/useInboxBadge";
+import { healthApi } from "../api/health";
 import { Button } from "@/components/ui/button";
 import { PluginSlotOutlet } from "@/plugins/slots";
 
+/**
+ * Render the application's left sidebar containing company header, primary navigation, plugin-provided sidebar content, and context-aware badges/counts.
+ *
+ * Conditionally includes an "Infrastructure" section when the deployment is detected as Fleetos and exposes plugin slots for sidebar items and a sidebar panel.
+ *
+ * @returns The sidebar element for the application UI.
+ */
 export function Sidebar() {
   const { openNewIssue } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
@@ -36,6 +46,18 @@ export function Sidebar() {
     refetchInterval: 10_000,
   });
   const liveRunCount = liveRuns?.length ?? 0;
+  const { data: health } = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const isFleetosMode = health?.deploymentMode === "fleetos";
+  // Preserve last-known fleetos state so a transient health query failure
+  // doesn't hide the Fleet sidebar section mid-session.
+  const lastKnownFleetosRef = useRef(false);
+  if (health) lastKnownFleetosRef.current = isFleetosMode;
+  const showFleet = lastKnownFleetosRef.current;
 
   function openSearch() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
@@ -106,6 +128,12 @@ export function Sidebar() {
         <SidebarProjects />
 
         <SidebarAgents />
+
+        {showFleet && (
+          <SidebarSection label="Infrastructure">
+            <SidebarNavItem to="/fleet" label="Fleet" icon={Server} />
+          </SidebarSection>
+        )}
 
         <SidebarSection label="Company">
           <SidebarNavItem to="/org" label="Org" icon={Network} />
