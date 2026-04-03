@@ -141,7 +141,7 @@ export class FleetOSProxyClient {
 
   private headers(): Record<string, string> {
     return {
-      "X-API-Key": this.apiKey,
+      Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     };

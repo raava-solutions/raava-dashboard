@@ -30,7 +30,7 @@ async function validateFleetosApiKey(
     res = await fetch(`${fleetosApiUrl}/api/tenants`, {
       method: "GET",
       headers: {
-        "X-API-Key": apiKey,
+        Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
       },
     });
@@ -56,28 +56,39 @@ async function validateFleetosApiKey(
   // Other non-OK (e.g. 404, 400) — treat as auth invalid
   if (!res.ok) return null;
 
-  let data: {
-    id?: string;
-    tenant_id?: string;
-    name?: string;
-    tenant_name?: string;
-    company_id?: string;
-  };
+  // FleetOS GET /api/tenants returns an array of tenants visible to the key.
+  // For tenant-scoped keys this is a single-element list; for admin keys it's all tenants.
+  let raw: unknown;
   try {
-    data = (await res.json()) as typeof data;
+    raw = await res.json();
   } catch (err) {
     throw new FleetosUpstreamError(
       `FleetOS returned unparseable JSON: ${err instanceof Error ? err.message : String(err)}`,
       res.status,
     );
   }
-  const tenantId = data.tenant_id ?? data.id;
-  const tenantName = data.tenant_name ?? data.name ?? "FleetOS Tenant";
-  // FleetOS tenant_id maps to a Paperclip companyId. If the response includes
-  // a company_id field we use it; otherwise we derive from the tenant_id.
+
+  // Normalize: response is either an array of tenants or a single tenant object
+  const tenants = Array.isArray(raw) ? raw : [raw];
+  if (tenants.length === 0) return null;
+
+  // Use the first tenant as the identity (tenant-scoped keys return exactly one)
+  const first = tenants[0] as {
+    id?: string;
+    tenant_id?: string;
+    name?: string;
+    tenant_name?: string;
+    company_id?: string;
+    role?: string;
+  };
+  const tenantId = first.tenant_id ?? first.id;
+  const tenantName = first.tenant_name ?? first.name ?? "FleetOS Tenant";
   if (!tenantId) return null;
-  const companyId = data.company_id ?? tenantId;
-  return { tenantId, tenantName, companyId };
+
+  // For admin keys (multiple tenants), use "platform" as the companyId
+  const isAdmin = first.role === "admin" || tenants.length > 1;
+  const companyId = first.company_id ?? (isAdmin ? "platform" : tenantId);
+  return { tenantId: isAdmin ? "platform" : tenantId, tenantName: isAdmin ? "Raava Platform" : tenantName, companyId };
 }
 
 export interface FleetosAuthRoutesOptions {

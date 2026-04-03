@@ -132,21 +132,26 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           try {
             const res = await fetch(`${opts.fleetosApiUrl}/api/tenants`, {
               method: "GET",
-              headers: { "X-API-Key": fleetosApiKey, Accept: "application/json" },
+              headers: { Authorization: `Bearer ${fleetosApiKey}`, Accept: "application/json" },
             });
             if (res.ok) {
-              const data = (await res.json()) as {
+              const raw = await res.json();
+              // FleetOS returns an array of tenants; use the first one
+              const list = Array.isArray(raw) ? raw : [raw];
+              const first = list[0] as {
                 id?: string;
                 tenant_id?: string;
                 name?: string;
                 tenant_name?: string;
                 company_id?: string;
-              };
-              const tenantId = data.tenant_id ?? data.id;
+                role?: string;
+              } | undefined;
+              const tenantId = first?.tenant_id ?? first?.id;
               if (tenantId) {
-                const tenantName = data.tenant_name ?? data.name ?? "FleetOS Tenant";
-                const companyId = data.company_id ?? tenantId;
-                const tenantData = { tenantId, tenantName, companyId };
+                const isAdmin = first?.role === "admin" || list.length > 1;
+                const tenantName = isAdmin ? "Raava Platform" : (first?.tenant_name ?? first?.name ?? "FleetOS Tenant");
+                const companyId = first?.company_id ?? (isAdmin ? "platform" : tenantId);
+                const tenantData = { tenantId: isAdmin ? "platform" : tenantId, tenantName, companyId };
                 setCachedFleetosValidation(fleetosApiKey, tenantData);
                 tenant = getCachedFleetosValidation(fleetosApiKey);
               }
