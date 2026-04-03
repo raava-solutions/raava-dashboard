@@ -115,8 +115,9 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           const match = cookieHeader.match(/(?:^|;\s*)fleetos_session=([^;]+)/);
           if (match?.[1]) {
             try {
+              const cookieValue = decodeURIComponent(match[1]);
               const decoded = JSON.parse(
-                Buffer.from(match[1], "base64").toString("utf-8"),
+                Buffer.from(cookieValue, "base64").toString("utf-8"),
               ) as { apiKey?: string };
               fleetosApiKey = decoded.apiKey;
             } catch {
