@@ -7,6 +7,7 @@ import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { heartbeatsApi } from "../api/heartbeats";
+import { healthApi } from "../api/health";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -25,6 +26,7 @@ import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRa
 import { PageSkeleton } from "../components/PageSkeleton";
 import type { Agent, Issue } from "@paperclipai/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
+import { RaavaHome } from "./RaavaHome";
 
 function getRecentIssues(issues: Issue[]): Issue[] {
   return [...issues]
@@ -39,6 +41,13 @@ export function Dashboard() {
   const seenActivityIdsRef = useRef<Set<string>>(new Set());
   const hydratedActivityRef = useRef(false);
   const activityAnimationTimersRef = useRef<number[]>([]);
+
+  const healthQuery = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    staleTime: 60_000,
+  });
+  const isFleetosMode = healthQuery.data?.deploymentMode === "fleetos";
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -177,6 +186,10 @@ export function Dashboard() {
     return (
       <EmptyState icon={LayoutDashboard} message="Create or select a company to view the dashboard." />
     );
+  }
+
+  if (isFleetosMode) {
+    return <RaavaHome />;
   }
 
   if (isLoading) {
