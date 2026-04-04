@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { AgentRole } from "@paperclipai/shared";
 import { useNavigate } from "@/lib/router";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -63,7 +64,7 @@ type WizardStep = 1 | 2 | 3 | 4;
 interface RoleDefinition {
   id: string;
   name: string;
-  agentRole: string;
+  agentRole: AgentRole;
   description: string;
   icon: LucideIcon;
   tools: string[];
@@ -295,6 +296,9 @@ function RoleCard({
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={selected}
+      aria-label={role.name}
       onClick={onClick}
       className={cn(
         "relative flex flex-col items-start gap-3 rounded-xl border p-5 text-left transition-all duration-200 hover:shadow-md",
@@ -487,6 +491,7 @@ export function RaavaOnboardingWizard() {
   }
 
   function handleClose() {
+    if (loading) return;
     reset();
     closeOnboarding();
   }
@@ -498,6 +503,14 @@ export function RaavaOnboardingWizard() {
       setError("Please fill in all required fields.");
       return;
     }
+
+    // If company was already created (e.g. user navigated back to step 1),
+    // skip the API call and just advance.
+    if (createdCompanyId) {
+      setStep(2);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -559,13 +572,12 @@ export function RaavaOnboardingWizard() {
     let createdProjectId: string | null = null;
 
     try {
-      // Build adapter config for hermes_fleetos
-      const adapterConfig: Record<string, unknown> = {
-        fleetosUrl: "", // TODO: populate from FleetOS session or config
-        containerId: "", // TODO: populated after provisioning
-        apiKey: "", // TODO: from FleetOS session, not user input
-      };
-      // Store role credentials separately for vault injection
+      // Build adapter config for hermes_fleetos.
+      // These will be populated when FleetOS provisioning is wired in.
+      // For MVP, the agent is created in Paperclip's DB; FleetOS provisioning is a separate step.
+      const adapterConfig: Record<string, unknown> = {};
+      // Store role credentials separately for vault injection — only include
+      // fields that have actual values to avoid sending empty strings.
       if (Object.values(credentials).some((v) => v.trim())) {
         adapterConfig.roleCredentials = { ...credentials };
       }
@@ -711,11 +723,12 @@ export function RaavaOnboardingWizard() {
               step === 2 ? "max-w-3xl" : "max-w-lg",
             )}
           >
-            {/* Close button */}
+            {/* Close button — disabled while async operations are in-flight */}
             <button
               type="button"
               onClick={handleClose}
-              className="absolute top-4 right-4 z-10 text-muted-foreground hover:text-foreground transition-colors"
+              disabled={loading}
+              className="absolute top-4 right-4 z-10 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
             >
               <X className="w-4 h-4" />
             </button>
@@ -829,7 +842,7 @@ export function RaavaOnboardingWizard() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3" role="radiogroup" aria-label="Select a role">
                     {ROLES.map((role) => (
                       <RoleCard
                         key={role.id}

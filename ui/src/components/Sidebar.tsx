@@ -65,6 +65,11 @@ export function Sidebar() {
 
   useEffect(() => {
     if (healthError) {
+      // A UI toast is unnecessary here — `lastKnownFleetosRef` preserves the
+      // previous deployment-mode result, so the user continues to see the
+      // correct sidebar layout even when the health endpoint is temporarily
+      // unreachable.  A noisy toast would only confuse users for a transient
+      // backend hiccup that has zero visible impact on the interface.
       console.warn("[Sidebar] Health check failed, using cached mode:", healthError);
     }
   }, [healthError]);
