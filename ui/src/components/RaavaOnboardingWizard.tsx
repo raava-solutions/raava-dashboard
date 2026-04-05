@@ -22,7 +22,7 @@ import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { queryKeys } from "../lib/queryKeys";
-import { Dialog, DialogPortal } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -366,21 +366,27 @@ function CredentialInput({
   onChange: (value: string) => void;
 }) {
   const [visible, setVisible] = useState(false);
+  const inputId = `credential-input-${field.id}`;
+  const hasRealHelpUrl = field.helpUrl && field.helpUrl !== "#";
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <Label className="text-xs">{field.label}</Label>
-        <a
-          href={field.helpUrl}
-          className="text-[10px] text-[#224AE8] hover:underline"
-          onClick={(e) => e.preventDefault()}
-        >
-          How to get this?
-        </a>
+        <Label htmlFor={inputId} className="text-xs">{field.label}</Label>
+        {hasRealHelpUrl && (
+          <a
+            href={field.helpUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[10px] text-[#224AE8] hover:underline"
+          >
+            How to get this?
+          </a>
+        )}
       </div>
       <div className="relative">
         <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
         <Input
+          id={inputId}
           type={visible ? "text" : "password"}
           placeholder={field.placeholder}
           value={value}
@@ -582,8 +588,11 @@ export function RaavaOnboardingWizard() {
       const adapterConfig: Record<string, unknown> = {};
       // Store role credentials separately for vault injection — only include
       // fields that have actual values to avoid sending empty strings.
-      if (Object.values(credentials).some((v) => v.trim())) {
-        adapterConfig.roleCredentials = { ...credentials };
+      const filteredCredentials = Object.fromEntries(
+        Object.entries(credentials).filter(([, v]) => v.trim())
+      );
+      if (Object.keys(filteredCredentials).length > 0) {
+        adapterConfig.roleCredentials = filteredCredentials;
       }
 
       // Create the agent
@@ -637,12 +646,24 @@ export function RaavaOnboardingWizard() {
       setSuccessState(true);
     } catch (err) {
       // Compensating deletes: clean up any resources created before the failure.
-      // Swallow delete errors — the original error is what matters to the user.
+      const rollbackErrors: string[] = [];
       if (createdProjectId) {
-        try { await projectsApi.remove(createdProjectId, createdCompanyId); } catch { /* swallow */ }
+        try {
+          await projectsApi.remove(createdProjectId, createdCompanyId);
+        } catch (rollbackErr) {
+          const msg = rollbackErr instanceof Error ? rollbackErr.message : "Unknown error";
+          console.error("Rollback error (project):", rollbackErr);
+          rollbackErrors.push(`Failed to rollback project: ${msg}`);
+        }
       }
       if (createdAgentId) {
-        try { await agentsApi.remove(createdAgentId, createdCompanyId); } catch { /* swallow */ }
+        try {
+          await agentsApi.remove(createdAgentId, createdCompanyId);
+        } catch (rollbackErr) {
+          const msg = rollbackErr instanceof Error ? rollbackErr.message : "Unknown error";
+          console.error("Rollback error (agent):", rollbackErr);
+          rollbackErrors.push(`Failed to rollback agent: ${msg}`);
+        }
       }
       // Invalidate after cleanup so the UI reflects the rollback
       queryClient.invalidateQueries({
@@ -652,9 +673,11 @@ export function RaavaOnboardingWizard() {
         queryKey: queryKeys.projects.list(createdCompanyId),
       });
 
-      setError(
-        err instanceof Error ? err.message : "Failed to hire team member",
-      );
+      const primaryError = err instanceof Error ? err.message : "Failed to hire team member";
+      const rollbackWarning = rollbackErrors.length > 0
+        ? ` (Warning: ${rollbackErrors.join("; ")})`
+        : "";
+      setError(primaryError + rollbackWarning);
     } finally {
       setLoading(false);
     }
@@ -682,63 +705,60 @@ export function RaavaOnboardingWizard() {
   if (successState) {
     return (
       <Dialog open onOpenChange={handleClose}>
-        <DialogPortal>
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="relative w-full max-w-md mx-4 rounded-2xl bg-card p-8 shadow-2xl border border-border text-center animate-in fade-in-0 zoom-in-95 duration-300">
-              {/* Raava star mark */}
-              <div className="mx-auto mb-4 flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-[#224AE8] via-[#716EFF] to-[#00BDB7]">
-                <Sparkles className="w-8 h-8 text-white" />
-              </div>
-
-              <h2
-                className="text-2xl font-bold"
-                style={{ fontFamily: "Syne, system-ui, sans-serif" }}
-              >
-                {hiredAgentName} is on your team!
-              </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                They&apos;re starting on their first task now.
-              </p>
-
-              <Button
-                onClick={handleGoToTeam}
-                className="mt-6 w-full text-white font-semibold"
-                style={{
-                  background:
-                    "linear-gradient(90deg, #224AE8, #716EFF, #00BDB7)",
-                }}
-              >
-                Go to My Team
-              </Button>
+        <DialogContent className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm border-0 p-0 max-w-none">
+          <div className="relative w-full max-w-md mx-4 rounded-2xl bg-card p-8 shadow-2xl border border-border text-center animate-in fade-in-0 zoom-in-95 duration-300">
+            {/* Raava star mark */}
+            <div className="mx-auto mb-4 flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-[#224AE8] via-[#716EFF] to-[#00BDB7]">
+              <Sparkles className="w-8 h-8 text-white" />
             </div>
+
+            <h2
+              className="text-2xl font-bold"
+              style={{ fontFamily: "Syne, system-ui, sans-serif" }}
+            >
+              {hiredAgentName} is on your team!
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              They&apos;re starting on their first task now.
+            </p>
+
+            <Button
+              onClick={handleGoToTeam}
+              className="mt-6 w-full text-white font-semibold"
+              style={{
+                background:
+                  "linear-gradient(90deg, #224AE8, #716EFF, #00BDB7)",
+              }}
+            >
+              Go to My Team
+            </Button>
           </div>
-        </DialogPortal>
+        </DialogContent>
       </Dialog>
     );
   }
 
   return (
     <Dialog open onOpenChange={handleClose}>
-      <DialogPortal>
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div
-            className={cn(
-              "relative w-full mx-4 rounded-2xl bg-card shadow-2xl border border-border animate-in fade-in-0 zoom-in-95 duration-300 overflow-hidden",
-              step === 2 ? "max-w-3xl" : "max-w-lg",
-            )}
+      <DialogContent className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm border-0 p-0 max-w-none">
+        <div
+          className={cn(
+            "relative w-full mx-4 rounded-2xl bg-card shadow-2xl border border-border animate-in fade-in-0 zoom-in-95 duration-300 overflow-hidden",
+            step === 2 ? "max-w-3xl" : "max-w-lg",
+          )}
+        >
+          {/* Close button — disabled while async operations are in-flight */}
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={loading}
+            aria-label="Close"
+            className="absolute top-4 right-4 z-10 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
           >
-            {/* Close button — disabled while async operations are in-flight */}
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={loading}
-              aria-label="Close"
-              className="absolute top-4 right-4 z-10 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <X className="w-4 h-4" />
+          </button>
 
-            <div className="p-8 max-h-[85vh] overflow-y-auto">
+          <div className="p-8 max-h-[85vh] overflow-y-auto">
               {/* Raava star mark */}
               <div className="flex justify-center mb-2">
                 <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-[#224AE8] via-[#716EFF] to-[#00BDB7]">
@@ -1074,8 +1094,7 @@ export function RaavaOnboardingWizard() {
               )}
             </div>
           </div>
-        </div>
-      </DialogPortal>
-    </Dialog>
-  );
-}
+        </DialogContent>
+      </Dialog>
+    );
+  }
