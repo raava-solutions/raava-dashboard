@@ -48,7 +48,7 @@
 :root {
   color-scheme: light;
   --raava-gradient: linear-gradient(90deg, #224AE8, #716EFF, #00BDB7);
-  --radius: 0;
+  --radius: 0.75rem;
   --background: oklch(0.99 0 0);
   --foreground: oklch(0.15 0 0);
   --card: oklch(0.99 0 0);
