@@ -97,6 +97,7 @@ import {
   isReadOnlyUnmanagedSkillEntry,
 } from "../lib/agent-skills-state";
 import { useIsRaava } from "../hooks/useIsRaava";
+import { RaavaTeamMemberDetail } from "./RaavaTeamMemberDetail";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -795,6 +796,8 @@ export function AgentDetail() {
       event.returnValue = "";
     }, [configDirty]),
   );
+
+  if (isRaava) return <RaavaTeamMemberDetail />;
 
   if (isLoading) return <PageSkeleton variant="detail" />;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;

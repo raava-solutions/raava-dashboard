@@ -59,6 +59,8 @@ import {
   type InboxWorkItem,
 } from "../lib/inbox";
 import { useDismissedInboxItems, useReadInboxItems } from "../hooks/useInboxBadge";
+import { useIsRaava } from "../hooks/useIsRaava";
+import { RaavaInbox } from "./RaavaInbox";
 
 type InboxCategoryFilter =
   | "everything"
@@ -591,6 +593,12 @@ function JoinRequestInboxRow({
 }
 
 export function Inbox() {
+  const { isRaava } = useIsRaava();
+  if (isRaava) return <RaavaInbox />;
+  return <InboxLegacy />;
+}
+
+function InboxLegacy() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();

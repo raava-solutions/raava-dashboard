@@ -7,7 +7,7 @@ import { fleetosAuthApi } from "../api/fleetos";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
-import { Sparkles } from "lucide-react";
+import { RaavaStarMark } from "@/components/RaavaStarMark";
 
 type AuthMode = "sign_in" | "sign_up";
 
@@ -47,45 +47,54 @@ function FleetosApiKeyForm({
   const canSubmit = apiKey.trim().length > 0;
 
   return (
-    <>
-      <h1 className="text-xl font-semibold">Sign in to Raava</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Enter your FleetOS API key to access this instance.
+    <div className="flex flex-col items-center gap-6">
+      <RaavaStarMark size={40} />
+      <h1 className="font-display text-2xl text-foreground text-center">
+        Sign in to Raava
+      </h1>
+      <p className="text-sm text-muted-foreground text-center">
+        Enter your FleetOS API key
       </p>
 
       <form
-        className="mt-6 space-y-4"
+        className="w-full space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           if (mutation.isPending || !canSubmit) return;
           mutation.mutate();
         }}
       >
-        <div>
-          <label htmlFor="apiKey" className="text-xs text-muted-foreground mb-1 block">API Key</label>
-          <input
-            id="apiKey"
-            name="apiKey"
-            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-            type="password"
-            placeholder="Enter your FleetOS API key"
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            autoComplete="off"
-            autoFocus
-          />
-        </div>
-        {error && <p className="text-xs text-destructive">{error}</p>}
+        <label htmlFor="apiKey" className="sr-only">API Key</label>
+        <input
+          id="apiKey"
+          name="apiKey"
+          className="w-full h-11 rounded-lg border border-border bg-white dark:bg-transparent px-3.5 text-base outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+          type="password"
+          placeholder="Enter your FleetOS API key"
+          value={apiKey}
+          onChange={(event) => setApiKey(event.target.value)}
+          autoComplete="off"
+          autoFocus
+          aria-describedby={error ? "apiKeyError" : undefined}
+        />
+        {error && <p id="apiKeyError" className="text-xs text-destructive">{error}</p>}
         <Button
           type="submit"
+          variant="gradient"
           disabled={mutation.isPending}
           aria-disabled={!canSubmit || mutation.isPending}
-          className={`w-full ${!canSubmit && !mutation.isPending ? "opacity-50" : ""}`}
+          className={`w-full h-11 rounded-lg text-base shadow-[0_2px_8px_rgba(34,74,232,0.25)] ${!canSubmit && !mutation.isPending ? "opacity-50" : ""}`}
         >
-          {mutation.isPending ? "Authenticating..." : "Sign In with API Key"}
+          <span className="font-[Syne,system-ui,sans-serif] font-semibold">
+            {mutation.isPending ? "Authenticating..." : "Sign In with API Key"}
+          </span>
         </Button>
       </form>
-    </>
+
+      <p className="text-xs text-muted-foreground text-center">
+        Secured by Raava
+      </p>
+    </div>
   );
 }
 
@@ -180,112 +189,119 @@ export function AuthPage() {
     );
   }
 
+  /* ── FleetOS: centered card layout ──────────────────────── */
+  if (isFleetosMode) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-[#fcfcfc] dark:bg-background">
+        <div className="w-full max-w-[480px] mx-4 rounded-2xl border border-border bg-white dark:bg-card p-12 shadow-[0_4px_24px_rgba(0,0,0,0.06)]">
+          <FleetosApiKeyForm nextPath={nextPath} />
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Standard: split layout with ASCII art ────────────── */
   return (
     <div className="fixed inset-0 flex bg-background">
       {/* Left half — form */}
       <div className="w-full md:w-1/2 flex flex-col overflow-y-auto">
         <div className="w-full max-w-md mx-auto my-auto px-8 py-12">
           <div className="flex items-center gap-2 mb-8">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <RaavaStarMark size={16} />
             <span className="text-sm font-medium">Raava</span>
           </div>
 
-          {isFleetosMode ? (
-            <FleetosApiKeyForm nextPath={nextPath} />
-          ) : (
-            <>
-              <h1 className="text-xl font-semibold">
-                {mode === "sign_in" ? "Sign in to Raava" : "Create your Raava account"}
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {mode === "sign_in"
-                  ? "Use your email and password to access this instance."
-                  : "Create an account for this instance. Email confirmation is not required in v1."}
-              </p>
+          <h1 className="text-xl font-semibold">
+            {mode === "sign_in" ? "Sign in to Raava" : "Create your Raava account"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {mode === "sign_in"
+              ? "Use your email and password to access this instance."
+              : "Create an account for this instance. Email confirmation is not required in v1."}
+          </p>
 
-              <form
-                className="mt-6 space-y-4"
-                method="post"
-                action={mode === "sign_up" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email"}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (mutation.isPending) return;
-                  if (!canSubmit) {
-                    setError("Please fill in all required fields.");
-                    return;
-                  }
-                  mutation.mutate();
-                }}
-              >
-                {mode === "sign_up" && (
-                  <div>
-                    <label htmlFor="name" className="text-xs text-muted-foreground mb-1 block">Name</label>
-                    <input
-                      id="name"
-                      name="name"
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                      value={name}
-                      onChange={(event) => setName(event.target.value)}
-                      autoComplete="name"
-                      autoFocus
-                    />
-                  </div>
-                )}
-                <div>
-                  <label htmlFor="email" className="text-xs text-muted-foreground mb-1 block">Email</label>
-                  <input
-                    id="email"
-                    name="email"
-                    className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    autoComplete="email"
-                    autoFocus={mode === "sign_in"}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="password" className="text-xs text-muted-foreground mb-1 block">Password</label>
-                  <input
-                    id="password"
-                    name="password"
-                    className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete={mode === "sign_in" ? "current-password" : "new-password"}
-                  />
-                </div>
-                {error && <p className="text-xs text-destructive">{error}</p>}
-                <Button
-                  type="submit"
-                  disabled={mutation.isPending}
-                  aria-disabled={!canSubmit || mutation.isPending}
-                  className={`w-full ${!canSubmit && !mutation.isPending ? "opacity-50" : ""}`}
-                >
-                  {mutation.isPending
-                    ? "Working…"
-                    : mode === "sign_in"
-                      ? "Sign In"
-                      : "Create Account"}
-                </Button>
-              </form>
-
-              <div className="mt-5 text-sm text-muted-foreground">
-                {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
-                <button
-                  type="button"
-                  className="font-medium text-foreground underline underline-offset-2"
-                  onClick={() => {
-                    setError(null);
-                    setMode(mode === "sign_in" ? "sign_up" : "sign_in");
-                  }}
-                >
-                  {mode === "sign_in" ? "Create one" : "Sign in"}
-                </button>
+          <form
+            className="mt-6 space-y-4"
+            method="post"
+            action={mode === "sign_up" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email"}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (mutation.isPending) return;
+              if (!canSubmit) {
+                setError("Please fill in all required fields.");
+                return;
+              }
+              mutation.mutate();
+            }}
+          >
+            {mode === "sign_up" && (
+              <div>
+                <label htmlFor="name" className="text-xs text-muted-foreground mb-1 block">Name</label>
+                <input
+                  id="name"
+                  name="name"
+                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  autoComplete="name"
+                  autoFocus
+                />
               </div>
-            </>
-          )}
+            )}
+            <div>
+              <label htmlFor="email" className="text-xs text-muted-foreground mb-1 block">Email</label>
+              <input
+                id="email"
+                name="email"
+                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                autoFocus={mode === "sign_in"}
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="text-xs text-muted-foreground mb-1 block">Password</label>
+              <input
+                id="password"
+                name="password"
+                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete={mode === "sign_in" ? "current-password" : "new-password"}
+              />
+            </div>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <Button
+              type="submit"
+              variant="gradient"
+              disabled={mutation.isPending}
+              aria-disabled={!canSubmit || mutation.isPending}
+              className={`w-full ${!canSubmit && !mutation.isPending ? "opacity-50" : ""}`}
+            >
+              {mutation.isPending
+                ? "Working…"
+                : mode === "sign_in"
+                  ? "Sign In"
+                  : "Create Account"}
+            </Button>
+          </form>
+
+          <div className="mt-5 text-sm text-muted-foreground">
+            {mode === "sign_in" ? "Need an account?" : "Already have an account?"}{" "}
+            <button
+              type="button"
+              className="font-medium text-foreground underline underline-offset-2"
+              onClick={() => {
+                setError(null);
+                setMode(mode === "sign_in" ? "sign_up" : "sign_in");
+              }}
+            >
+              {mode === "sign_in" ? "Create one" : "Sign in"}
+            </button>
+          </div>
         </div>
       </div>
 

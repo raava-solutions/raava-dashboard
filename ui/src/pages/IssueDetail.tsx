@@ -66,6 +66,7 @@ import {
 import type { ActivityEvent } from "@paperclipai/shared";
 import type { Agent, Issue, IssueAttachment, IssueComment } from "@paperclipai/shared";
 import { useIsRaava } from "../hooks/useIsRaava";
+import { RaavaTaskDetail } from "./RaavaTaskDetail";
 
 type CommentReassignment = IssueCommentReassignment;
 type IssueDetailComment = (IssueComment | OptimisticIssueComment) & {
@@ -210,11 +211,17 @@ function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<st
 }
 
 export function IssueDetail() {
+  const { isRaava } = useIsRaava();
+  if (isRaava) return <RaavaTaskDetail />;
+  return <IssueDetailLegacy />;
+}
+
+function IssueDetailLegacy() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const { isRaava } = useIsRaava();
+  const isRaava = false;
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
