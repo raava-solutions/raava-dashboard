@@ -34,12 +34,10 @@ function formatElapsed(seconds: number): string {
 
 /** Derive a human-friendly display name from a container name. */
 function displayName(container: FleetContainer): string {
-  return (
-    container.labels?.["agent_name"] ??
-    container.name
-      .replace(/[-_]/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-  );
+  const raw = container.labels?.["agent_name"] ?? container.name ?? container.id ?? "Unknown";
+  return raw
+    .replace(/[-_]/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ---------------------------------------------------------------------------
