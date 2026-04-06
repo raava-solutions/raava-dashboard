@@ -1001,9 +1001,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
   });
 
   router.get("/companies/:companyId/issues/:issueId", async (req, res) => {
+    const companyId = req.params.companyId as string;
     const id = req.params.issueId as string;
     const issue = await svc.getById(id);
     if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    if (issue.companyId !== companyId) {
       res.status(404).json({ error: "Issue not found" });
       return;
     }
@@ -1302,8 +1307,16 @@ export function issueRoutes(db: Db, storage: StorageService) {
   };
   router.patch("/issues/:id", validate(updateIssueRouteSchema), handlePatchIssue);
   router.patch("/companies/:companyId/issues/:issueId", validate(updateIssueRouteSchema), (req, res, next) => {
-    (req.params as Record<string, string>).id = req.params.issueId as string;
-    handlePatchIssue(req, res, next);
+    const issueId = req.params.issueId as string;
+    const companyId = req.params.companyId as string;
+    (req.params as Record<string, string>).id = issueId;
+    svc.getById(issueId).then((issue) => {
+      if (!issue || issue.companyId !== companyId) {
+        res.status(404).json({ error: "Issue not found" });
+        return;
+      }
+      handlePatchIssue(req, res, next);
+    }).catch(next);
   });
 
   const handleDeleteIssue: RequestHandler = async (req, res) => {
@@ -1346,8 +1359,16 @@ export function issueRoutes(db: Db, storage: StorageService) {
   };
   router.delete("/issues/:id", handleDeleteIssue);
   router.delete("/companies/:companyId/issues/:issueId", (req, res, next) => {
-    (req.params as Record<string, string>).id = req.params.issueId as string;
-    handleDeleteIssue(req, res, next);
+    const issueId = req.params.issueId as string;
+    const companyId = req.params.companyId as string;
+    (req.params as Record<string, string>).id = issueId;
+    svc.getById(issueId).then((issue) => {
+      if (!issue || issue.companyId !== companyId) {
+        res.status(404).json({ error: "Issue not found" });
+        return;
+      }
+      handleDeleteIssue(req, res, next);
+    }).catch(next);
   });
 
   router.post("/issues/:id/checkout", validate(checkoutIssueSchema), async (req, res) => {

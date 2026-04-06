@@ -865,9 +865,14 @@ export function agentRoutes(db: Db) {
   });
 
   router.get("/companies/:companyId/agents/:agentId", async (req, res) => {
+    const companyId = req.params.companyId as string;
     const id = req.params.agentId as string;
     const agent = await svc.getById(id);
     if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    if (agent.companyId !== companyId) {
       res.status(404).json({ error: "Agent not found" });
       return;
     }
