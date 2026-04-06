@@ -14,6 +14,7 @@ import {
   type FleetOSProxyClient,
   type ProvisionJob,
 } from "./fleetos-client.js";
+import { logger } from "../middleware/logger.js";
 
 /** Default polling interval in milliseconds (15 seconds). */
 export const PROVISION_POLL_INTERVAL_MS = 15_000;
@@ -112,13 +113,17 @@ async function pollProvisioningAgents(
       if (err instanceof FleetOSProxyError && (err.statusCode === 503 || err.statusCode === 504)) {
         continue;
       }
-      // For other errors (e.g., 404 job not found), mark as failed
+      // For other errors (e.g., 404 job not found), mark as failed.
+      // Log the real error server-side; store a sanitized message in the DB
+      // to avoid leaking internal details (stack traces, IPs, service names).
       const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      logger.error({ agentId: agent.id, jobId, error: message, stack }, "Failed to poll provision job");
       await db
         .update(agents)
         .set({
           status: "error",
-          provisionError: `Failed to poll provision job: ${message}`,
+          provisionError: "Provisioning failed — please contact support or try again",
           updatedAt: new Date(),
         })
         .where(
@@ -154,11 +159,15 @@ async function pollProvisioningAgents(
         );
       completed++;
     } else if (job.status === "failed" || job.status === "cancelled" || job.status === "timeout") {
+      // Log the raw Fleet API error server-side; store a sanitized message in the DB.
+      if (job.error) {
+        logger.error({ agentId: agent.id, jobId, fleetError: job.error, jobStatus: job.status }, "Provisioning job failed");
+      }
       await db
         .update(agents)
         .set({
           status: "error",
-          provisionError: job.error ?? `Provisioning ${job.status}`,
+          provisionError: `Provisioning ${job.status} — please contact support or try again`,
           updatedAt: new Date(),
         })
         .where(

@@ -50,6 +50,7 @@ import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
 import { createFleetOSClient, FleetOSProxyError } from "../services/fleetos-client.js";
+import { logger } from "../middleware/logger.js";
 import { resolveRolePreset } from "../services/provision-role-presets.js";
 import { getProvisionStatus } from "../services/provision-poller.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -679,11 +680,14 @@ export function agentRoutes(db: Db) {
       process.env.FLEETOS_API_URL;
 
     if (!baseUrl || !apiKey) {
+      // NOTE: In non-prod environments without FleetOS configured, hermes_fleetos
+      // agents will land in error state immediately. This is expected behavior,
+      // not a bug — FleetOS credentials are only required in production.
       await db
         .update(agentsTable)
         .set({
           status: "error",
-          provisionError: "FleetOS API URL or API key not configured",
+          provisionError: "Provisioning failed — FleetOS is not configured in this environment",
           updatedAt: new Date(),
         })
         .where(eq(agentsTable.id, agent.id));
@@ -699,17 +703,57 @@ export function agentRoutes(db: Db) {
       return;
     }
 
+    // Validate that the Fleet API URL uses HTTPS for non-localhost hosts
+    // to prevent bearer tokens from being sent in plaintext over the network.
+    try {
+      const parsedUrl = new URL(baseUrl);
+      const isLocalhost = parsedUrl.hostname === "localhost" || parsedUrl.hostname === "127.0.0.1";
+      if (parsedUrl.protocol !== "https:" && !isLocalhost) {
+        logger.warn({ agentId: agent.id, baseUrl }, "Rejecting non-HTTPS Fleet API URL for non-localhost host");
+        await db
+          .update(agentsTable)
+          .set({
+            status: "error",
+            provisionError: "Provisioning failed — please contact support or try again",
+            updatedAt: new Date(),
+          })
+          .where(eq(agentsTable.id, agent.id));
+        await logActivity(db, {
+          companyId,
+          actorType: "system",
+          actorId: "system",
+          action: "agent.provision.failed",
+          entityType: "agent",
+          entityId: agent.id,
+          details: { reason: "Fleet API URL must use HTTPS for non-localhost hosts" },
+        });
+        return;
+      }
+    } catch {
+      logger.error({ agentId: agent.id, baseUrl }, "Invalid Fleet API URL");
+      await db
+        .update(agentsTable)
+        .set({
+          status: "error",
+          provisionError: "Provisioning failed — please contact support or try again",
+          updatedAt: new Date(),
+        })
+        .where(eq(agentsTable.id, agent.id));
+      return;
+    }
+
     const preset = resolveRolePreset(agent.role);
 
     let client;
     try {
       client = createFleetOSClient(apiKey, baseUrl);
-    } catch {
+    } catch (err) {
+      logger.error({ agentId: agent.id, error: err instanceof Error ? err.message : String(err) }, "Failed to create FleetOS client");
       await db
         .update(agentsTable)
         .set({
           status: "error",
-          provisionError: "Failed to create FleetOS client",
+          provisionError: "Provisioning failed — please contact support or try again",
           updatedAt: new Date(),
         })
         .where(eq(agentsTable.id, agent.id));
@@ -755,11 +799,13 @@ export function agentRoutes(db: Db) {
     } catch (err) {
       // Fleet API unreachable or returned an error — log but don't fail agent creation.
       const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      logger.error({ agentId: agent.id, companyId, error: message, stack }, "Failed to start provisioning");
       await db
         .update(agentsTable)
         .set({
           status: "error",
-          provisionError: `Failed to start provisioning: ${message}`,
+          provisionError: "Provisioning failed — please contact support or try again",
           updatedAt: new Date(),
         })
         .where(eq(agentsTable.id, agent.id));
@@ -770,7 +816,7 @@ export function agentRoutes(db: Db) {
         action: "agent.provision.failed",
         entityType: "agent",
         entityId: agent.id,
-        details: { error: message },
+        details: { error: "Provisioning failed" },
       });
     }
   }
@@ -1564,8 +1610,19 @@ export function agentRoutes(db: Db) {
       );
     }
 
-    // Kick off FleetOS provisioning for hermes_fleetos agents
-    void maybeStartProvisioning(agent, companyId);
+    // Kick off FleetOS provisioning for hermes_fleetos agents — but only if
+    // the company does not require board approval for new agents.  The
+    // agent-hires route handles the approval flow; this route is the direct
+    // creation path and must apply the same guard.
+    const company = await db
+      .select({ requireBoardApprovalForNewAgents: companies.requireBoardApprovalForNewAgents })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .then((rows) => rows[0] ?? null);
+    const requiresApproval = company?.requireBoardApprovalForNewAgents ?? false;
+    if (!requiresApproval) {
+      void maybeStartProvisioning(agent, companyId);
+    }
 
     res.status(201).json(agent);
   });
