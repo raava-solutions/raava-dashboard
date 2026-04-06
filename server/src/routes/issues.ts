@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type RequestHandler } from "express";
 import multer from "multer";
 import { z } from "zod";
 import type { Db } from "@paperclipai/db";
@@ -1000,7 +1000,41 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.status(201).json(issue);
   });
 
-  router.patch("/issues/:id", validate(updateIssueRouteSchema), async (req, res) => {
+  router.get("/companies/:companyId/issues/:issueId", async (req, res) => {
+    const id = req.params.issueId as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    const [{ project, goal }, ancestors, mentionedProjectIds, documentPayload] = await Promise.all([
+      resolveIssueProjectAndGoal(issue),
+      svc.getAncestors(issue.id),
+      svc.findMentionedProjectIds(issue.id),
+      documentsSvc.getIssueDocumentPayload(issue),
+    ]);
+    const mentionedProjects = mentionedProjectIds.length > 0
+      ? await projectsSvc.listByIds(issue.companyId, mentionedProjectIds)
+      : [];
+    const currentExecutionWorkspace = issue.executionWorkspaceId
+      ? await executionWorkspacesSvc.getById(issue.executionWorkspaceId)
+      : null;
+    const workProducts = await workProductsSvc.listForIssue(issue.id);
+    res.json({
+      ...issue,
+      goalId: goal?.id ?? issue.goalId,
+      ancestors,
+      ...documentPayload,
+      project: project ?? null,
+      goal: goal ?? null,
+      mentionedProjects,
+      currentExecutionWorkspace,
+      workProducts,
+    });
+  });
+
+  const handlePatchIssue: RequestHandler = async (req, res) => {
     const id = req.params.id as string;
     const existing = await svc.getById(id);
     if (!existing) {
@@ -1265,9 +1299,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
     })();
 
     res.json({ ...issue, comment });
+  };
+  router.patch("/issues/:id", validate(updateIssueRouteSchema), handlePatchIssue);
+  router.patch("/companies/:companyId/issues/:issueId", validate(updateIssueRouteSchema), (req, res, next) => {
+    (req.params as Record<string, string>).id = req.params.issueId as string;
+    handlePatchIssue(req, res, next);
   });
 
-  router.delete("/issues/:id", async (req, res) => {
+  const handleDeleteIssue: RequestHandler = async (req, res) => {
     const id = req.params.id as string;
     const existing = await svc.getById(id);
     if (!existing) {
@@ -1304,6 +1343,11 @@ export function issueRoutes(db: Db, storage: StorageService) {
     });
 
     res.json(issue);
+  };
+  router.delete("/issues/:id", handleDeleteIssue);
+  router.delete("/companies/:companyId/issues/:issueId", (req, res, next) => {
+    (req.params as Record<string, string>).id = req.params.issueId as string;
+    handleDeleteIssue(req, res, next);
   });
 
   router.post("/issues/:id/checkout", validate(checkoutIssueSchema), async (req, res) => {

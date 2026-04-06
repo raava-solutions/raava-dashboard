@@ -864,6 +864,24 @@ export function agentRoutes(db: Db) {
     res.json(result.map((agent) => redactForRestrictedAgentView(agent)));
   });
 
+  router.get("/companies/:companyId/agents/:agentId", async (req, res) => {
+    const id = req.params.agentId as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    if (req.actor.type === "agent" && req.actor.agentId !== id) {
+      const canRead = await actorCanReadConfigurationsForCompany(req, agent.companyId);
+      if (!canRead) {
+        res.json(await buildAgentDetail(agent, { restricted: true }));
+        return;
+      }
+    }
+    res.json(await buildAgentDetail(agent));
+  });
+
   router.get("/instance/scheduler-heartbeats", async (req, res) => {
     assertInstanceAdmin(req);
 
