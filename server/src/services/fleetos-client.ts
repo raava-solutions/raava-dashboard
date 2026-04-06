@@ -247,7 +247,11 @@ export class FleetOSProxyClient {
   }
 
   async startProvision(body: ProvisionRequest): Promise<ProvisionJob> {
-    return this.request<ProvisionJob>("POST", "/api/provision", body);
+    const raw = await this.request<Record<string, unknown>>("POST", "/api/provision", body);
+    if (raw.job_id !== undefined && raw.id === undefined) {
+      raw.id = raw.job_id;
+    }
+    return raw as unknown as ProvisionJob;
   }
 
   async getProvisionJob(jobId: string): Promise<ProvisionJob> {
