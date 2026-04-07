@@ -13,6 +13,13 @@ function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function resolveContainerId(ctx: AdapterExecutionContext): string {
+  const contextContainerId = nonEmpty(ctx.context.provisionedContainerId);
+  const agentContainerId = nonEmpty(ctx.agent.provisionedContainerId);
+  const configContainerId = asString(ctx.config.containerId, "");
+  return contextContainerId ?? agentContainerId ?? configContainerId;
+}
+
 const SECRET_KEY_RE = /(key|token|secret|password|authorization)/i;
 
 /** Recursively sanitize objects — replace values whose key matches SECRET_KEY_RE with "***". */
@@ -116,7 +123,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   // ---- Read adapter config ----
   const fleetosUrl = asString(config.fleetosUrl, "");
   const apiKey = asString(config.apiKey, "");
-  const containerId = asString(config.containerId, "");
+  const containerId = resolveContainerId(ctx);
 
   if (!fleetosUrl || !apiKey || !containerId) {
     return {
@@ -124,7 +131,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       signal: null,
       timedOut: false,
       errorMessage:
-        "hermes_fleetos adapter requires fleetosUrl, apiKey, and containerId in adapter config",
+        "hermes_fleetos adapter requires fleetosUrl, apiKey, and a containerId in adapter config or execution context",
       errorCode: "config_missing",
     };
   }

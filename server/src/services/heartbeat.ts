@@ -2654,9 +2654,18 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
+      const provisionedContainerId =
+        readNonEmptyString(context.provisionedContainerId) ??
+        readNonEmptyString(parseObject(agent.metadata).provisionedContainerId);
+      if (provisionedContainerId) {
+        context.provisionedContainerId = provisionedContainerId;
+      }
       const adapterResult = await adapter.execute({
         runId: run.id,
-        agent,
+        agent: {
+          ...agent,
+          provisionedContainerId,
+        },
         runtime: runtimeForAdapter,
         config: runtimeConfig,
         context,
