@@ -214,6 +214,14 @@ function ProfileHeader({
             </span>
             <span>Hired {formatDate(agent.createdAt)}</span>
           </div>
+          {(agent as AgentDetailRecord & { provisionError?: string | null }).provisionError && (
+            <div className="flex items-center gap-1.5 rounded-md bg-red-50 border border-red-200 px-2.5 py-1 dark:bg-red-900/20 dark:border-red-800">
+              <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+              <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                Provisioning failed — agent may not be running
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
