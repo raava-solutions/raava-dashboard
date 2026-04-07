@@ -10,7 +10,7 @@
  *   4. Progress & Result  -- poll job status, show steps, link to agent on success
  */
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@/lib/router";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -106,15 +106,15 @@ function StepIndicator({ current }: { current: Step }) {
               <div
                 className={cn(
                   "h-px w-8 sm:w-12",
-                  isComplete ? "bg-foreground" : "bg-border",
+                  isComplete ? "bg-accent" : "bg-border",
                 )}
               />
             )}
             <div
               className={cn(
                 "flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                isActive && "bg-foreground text-background",
-                isComplete && "bg-foreground/10 text-foreground",
+                isActive && "[background:var(--raava-gradient)] text-white",
+                isComplete && "bg-accent/20 text-accent-foreground",
                 !isActive && !isComplete && "bg-muted text-muted-foreground",
               )}
             >
@@ -716,6 +716,8 @@ function StepProgress({
     job?.status === "cancelled" ||
     job?.status === "timeout";
 
+  const isFailed = job?.status === "failed" || job?.status === "timeout" || job?.status === "cancelled";
+
   if (error && !job) {
     return (
       <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4 space-y-3">
@@ -723,7 +725,7 @@ function StepProgress({
           {error instanceof Error ? error.message : "Failed to fetch job status"}
         </p>
         <Button variant="outline" size="sm" onClick={onRetry}>
-          Retry
+          Try Again
         </Button>
       </div>
     );
@@ -738,15 +740,60 @@ function StepProgress({
     );
   }
 
+  // Success: show .raava-card confirmation
+  if (job.status === "complete") {
+    return (
+      <div className="space-y-6">
+        {/* Per-step progress list */}
+        {job.steps && job.steps.length > 0 && (
+          <div className="space-y-2">
+            {job.steps.map((step, i) => (
+              <ProvisionStepRow key={i} step={step} />
+            ))}
+          </div>
+        )}
+
+        {/* Confirmation card */}
+        <div className="raava-card p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10">
+              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold">Provisioning Complete</h2>
+              <p className="text-xs text-muted-foreground">
+                Your agent is ready.{" "}
+                {job.container_name && (
+                  <>Container: <span className="font-mono">{job.container_name}</span></>
+                )}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {job.container_name && (
+              <Button
+                size="sm"
+                onClick={() => navigate(`/fleet/${encodeURIComponent(job.container_name!)}`)}
+              >
+                <Server className="h-3.5 w-3.5 mr-1.5" />
+                View Agent
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => navigate("/fleet")}>
+              Back to Fleet
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // In-progress or failed
   return (
     <div className="space-y-6">
       {/* Status header */}
       <div className="flex items-center gap-3">
-        {job.status === "complete" ? (
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10">
-            <CheckCircle2 className="h-5 w-5 text-green-500" />
-          </div>
-        ) : job.status === "failed" || job.status === "timeout" ? (
+        {isFailed ? (
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
             <XCircle className="h-5 w-5 text-destructive" />
           </div>
@@ -757,15 +804,13 @@ function StepProgress({
         )}
         <div>
           <h2 className="text-sm font-semibold">
-            {job.status === "complete"
-              ? "Provisioning Complete"
-              : job.status === "failed"
-                ? "Provisioning Failed"
-                : job.status === "timeout"
-                  ? "Provisioning Timed Out"
-                  : job.status === "cancelled"
-                    ? "Provisioning Cancelled"
-                    : "Provisioning in Progress..."}
+            {job.status === "failed"
+              ? "Provisioning Failed"
+              : job.status === "timeout"
+                ? "Provisioning Timed Out"
+                : job.status === "cancelled"
+                  ? "Provisioning Cancelled"
+                  : "Provisioning in Progress..."}
           </h2>
           <p className="text-xs text-muted-foreground">
             Job: <span className="font-mono">{job.id}</span>
@@ -773,52 +818,37 @@ function StepProgress({
         </div>
       </div>
 
-      {/* Steps */}
+      {/* Per-step progress list */}
       {job.steps && job.steps.length > 0 && (
-        <div className="rounded-lg border border-border bg-card">
-          <div className="divide-y divide-border">
-            {job.steps.map((step, i) => (
-              <ProvisionStepRow key={i} step={step} />
-            ))}
-          </div>
+        <div className="space-y-2">
+          {job.steps.map((step, i) => (
+            <ProvisionStepRow key={i} step={step} />
+          ))}
         </div>
       )}
 
-      {/* Error */}
+      {/* Error message from provisionError — truncated at 100 chars */}
       {job.error && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3">
-          <p className="text-sm text-destructive">{job.error}</p>
+          <div className="flex items-start gap-2">
+            <XCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+            <p className="text-sm text-destructive">
+              {job.error.length > 100 ? `${job.error.slice(0, 100)}...` : job.error}
+            </p>
+          </div>
         </div>
       )}
 
       {/* Actions */}
       {isTerminal && (
         <div className="flex items-center gap-3">
-          {job.status === "complete" && job.container_name && (
-            <Button
-              size="sm"
-              onClick={() => navigate(`/fleet/${encodeURIComponent(job.container_name!)}`)}
-            >
-              <Server className="h-3.5 w-3.5 mr-1.5" />
-              View Agent
-            </Button>
-          )}
-          {job.status === "complete" && (
-            <Button variant="outline" size="sm" onClick={() => navigate("/fleet")}>
-              Back to Fleet
-            </Button>
-          )}
-          {(job.status === "failed" || job.status === "timeout" || job.status === "cancelled") && (
-            <>
-              <Button size="sm" onClick={onRetry}>
-                <Rocket className="h-3.5 w-3.5 mr-1.5" />
-                Retry
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => navigate("/fleet")}>
-                Back to Fleet
-              </Button>
-            </>
-          )}
+          <Button size="sm" onClick={onRetry}>
+            <Rocket className="h-3.5 w-3.5 mr-1.5" />
+            Try Again
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate("/fleet")}>
+            Back to Fleet
+          </Button>
         </div>
       )}
     </div>
@@ -826,35 +856,47 @@ function StepProgress({
 }
 
 function ProvisionStepRow({ step }: { step: ProvisionStep }) {
+  const iconByStatus: Record<string, ReactNode> = {
+    pending: <Circle className="h-4 w-4 text-muted-foreground" />,
+    running: <Loader2 className="h-4 w-4 animate-spin text-foreground" />,
+    done: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
+    failed: <XCircle className="h-4 w-4 text-destructive" />,
+    skipped: <SkipForward className="h-4 w-4 text-muted-foreground" />,
+  };
+
+  const textColorByStatus: Record<string, string> = {
+    pending: "text-muted-foreground",
+    running: "text-foreground",
+    done: "text-foreground",
+    failed: "text-destructive",
+    skipped: "text-muted-foreground",
+  };
+
+  // For failed steps, show provisionError detail truncated at 100 chars
+  const detail = step.detail
+    ? step.detail.length > 100
+      ? `${step.detail.slice(0, 100)}...`
+      : step.detail
+    : null;
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <div className="shrink-0">
-        {step.status === "done" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
-        {step.status === "running" && <Loader2 className="h-4 w-4 animate-spin text-foreground" />}
-        {step.status === "failed" && <XCircle className="h-4 w-4 text-destructive" />}
-        {step.status === "pending" && <Circle className="h-4 w-4 text-muted-foreground/40" />}
-        {step.status === "skipped" && <SkipForward className="h-4 w-4 text-muted-foreground/40" />}
+    <div className="flex items-start gap-3 px-4 py-3">
+      <div className="shrink-0 mt-0.5">
+        {iconByStatus[step.status] ?? <Circle className="h-4 w-4 text-muted-foreground" />}
       </div>
       <div className="min-w-0 flex-1">
-        <span className="text-sm font-medium">{step.name}</span>
-        {step.detail && (
-          <p className="text-xs text-muted-foreground mt-0.5 truncate">{step.detail}</p>
+        <span className={cn("text-sm font-medium", textColorByStatus[step.status])}>
+          {step.name}
+        </span>
+        {detail && (
+          <p className={cn(
+            "text-xs mt-0.5",
+            step.status === "failed" ? "text-destructive" : "text-muted-foreground",
+          )}>
+            {detail}
+          </p>
         )}
       </div>
-      <Badge
-        variant={
-          step.status === "done"
-            ? "default"
-            : step.status === "running"
-              ? "secondary"
-              : step.status === "failed"
-                ? "destructive"
-                : "outline"
-        }
-        className="text-[10px] shrink-0"
-      >
-        {step.status}
-      </Badge>
     </div>
   );
 }
