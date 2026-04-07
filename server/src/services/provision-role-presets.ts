@@ -19,6 +19,10 @@ export interface RolePreset {
 
 const DEFAULT_TEMPLATE = "hermes";
 
+// ADR-001: OP secrets mode is mandatory now that Mendez Logistics has a
+// configured 1Password service account token (closed Apr 7, ahead of Apr 14).
+const DEFAULT_SECRETS_MODE = "op";
+
 /**
  * Presets keyed by the actual AGENT_ROLES values:
  * ceo, cto, cmo, cfo, engineer, designer, pm, qa, devops, researcher, general
@@ -120,5 +124,10 @@ export const ROLE_PRESETS: Record<string, RolePreset> = {
  */
 export function resolveRolePreset(role: string): RolePreset {
   const normalized = role.toLowerCase().trim();
-  return ROLE_PRESETS[normalized] ?? ROLE_PRESETS.general;
+  const preset = ROLE_PRESETS[normalized] ?? ROLE_PRESETS.general;
+  // Inject secrets_mode into extraFields for all presets (ADR-001 escape hatch)
+  return {
+    ...preset,
+    extraFields: { ...preset.extraFields, secrets_mode: DEFAULT_SECRETS_MODE },
+  };
 }

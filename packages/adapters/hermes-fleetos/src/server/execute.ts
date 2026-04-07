@@ -113,9 +113,9 @@ function parseHermesOutput(stdout: string): {
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, config, context, onLog, onMeta } = ctx;
 
-  // ---- Read adapter config ----
-  const fleetosUrl = asString(config.fleetosUrl, "");
-  const apiKey = asString(config.apiKey, "");
+  // ---- Read adapter config (fall back to env vars matching maybeStartProvisioning) ----
+  const fleetosUrl = asString(config.fleetosUrl, "") || process.env.FLEETOS_API_URL || "";
+  const apiKey = asString(config.apiKey, "") || process.env.FLEETOS_API_KEY || "";
   // Prefer the DB-persisted provisionedContainerId written by the provision poller
   // over the adapterConfig JSON field — the two never synced, causing config_missing errors.
   const containerId = nonEmpty(agent.provisionedContainerId) ?? asString(config.containerId, "");
@@ -219,7 +219,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
 
   // ---- Execute via FleetOS ----
-  const client = new FleetOSClient(fleetosUrl, apiKey);
+  // Server-side execution: allow localhost since Fleet API runs on the same host.
+  const client = new FleetOSClient(fleetosUrl, apiKey, { allowLocalhost: true });
   const timeoutMs = timeoutSec * 1000;
 
   try {

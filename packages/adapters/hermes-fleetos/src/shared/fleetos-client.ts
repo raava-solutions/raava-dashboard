@@ -22,11 +22,16 @@ export class FleetOSClientError extends Error {
   }
 }
 
+export interface FleetOSClientOptions {
+  /** Allow localhost/loopback targets (safe when running server-side, not in user containers). */
+  allowLocalhost?: boolean;
+}
+
 export class FleetOSClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
 
-  constructor(baseUrl: string, apiKey: string) {
+  constructor(baseUrl: string, apiKey: string, options?: FleetOSClientOptions) {
     // Security: validate and normalize the base URL to prevent SSRF (HIGH)
     let parsed: URL;
     try {
@@ -50,12 +55,18 @@ export class FleetOSClient {
       "100.100.100.200",  // Alibaba metadata
     ];
     const hostname = parsed.hostname.toLowerCase();
-    if (
-      DANGEROUS_HOSTS.includes(hostname) ||
+    const isLoopback =
       hostname === "localhost" ||
       hostname === "[::1]" ||
-      /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
-    ) {
+      /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname);
+    if (DANGEROUS_HOSTS.includes(hostname)) {
+      throw new FleetOSClientError(
+        `FleetOS base URL points to a blocked host: ${hostname}`,
+        0,
+        null,
+      );
+    }
+    if (isLoopback && !options?.allowLocalhost) {
       throw new FleetOSClientError(
         `FleetOS base URL points to a blocked host: ${hostname}`,
         0,
@@ -74,7 +85,7 @@ export class FleetOSClient {
 
   private buildHeaders(): Record<string, string> {
     return {
-      "X-API-Key": this.apiKey,
+      Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     };
@@ -139,19 +150,19 @@ export class FleetOSClient {
 
   /** List all containers visible to the current API key. */
   async listContainers(): Promise<FleetOSContainer[]> {
-    return this.request<FleetOSContainer[]>("GET", "/api/v1/containers");
+    return this.request<FleetOSContainer[]>("GET", "/api/containers");
   }
 
   /** Get a single container by ID. */
   async getContainer(id: string): Promise<FleetOSContainer> {
-    return this.request<FleetOSContainer>("GET", `/api/v1/containers/${encodeURIComponent(id)}`);
+    return this.request<FleetOSContainer>("GET", `/api/containers/${encodeURIComponent(id)}`);
   }
 
   /** Start a stopped container. */
   async startContainer(id: string): Promise<FleetOSContainer> {
     return this.request<FleetOSContainer>(
       "POST",
-      `/api/v1/containers/${encodeURIComponent(id)}/start`,
+      `/api/containers/${encodeURIComponent(id)}/start`,
     );
   }
 
@@ -159,7 +170,7 @@ export class FleetOSClient {
   async stopContainer(id: string): Promise<FleetOSContainer> {
     return this.request<FleetOSContainer>(
       "POST",
-      `/api/v1/containers/${encodeURIComponent(id)}/stop`,
+      `/api/containers/${encodeURIComponent(id)}/stop`,
     );
   }
 
@@ -169,7 +180,9 @@ export class FleetOSClient {
 
   /**
    * Execute a command inside a container.
-   * This is the primary interface for dispatching hermes CLI invocations.
+   *
+   * Fleet API exec is async: POST returns an operation_id, then we poll
+   * GET /api/operations/:id until the operation completes or times out.
    */
   async exec(
     containerId: string,
@@ -177,17 +190,65 @@ export class FleetOSClient {
     timeoutMs: number = 120_000,
     env?: Record<string, string>,
   ): Promise<FleetOSExecResult> {
-    return this.request<FleetOSExecResult>(
+    // Submit the exec request — Fleet API returns an async operation handle
+    const op = await this.request<{
+      operation_id: string;
+      status: string;
+    }>(
       "POST",
-      `/api/v1/containers/${encodeURIComponent(containerId)}/exec`,
+      `/api/containers/${encodeURIComponent(containerId)}/exec`,
       {
         command,
         timeout_ms: timeoutMs,
         ...(env && Object.keys(env).length > 0 ? { env } : {}),
       },
-      // Allow extra headroom over the container-level timeout
-      timeoutMs + 10_000,
+      30_000, // connection timeout for the submit call itself
     );
+
+    // Poll the operation until it completes
+    const deadline = Date.now() + timeoutMs + 30_000; // extra headroom
+    const pollIntervalMs = 2_000;
+
+    while (Date.now() < deadline) {
+      const result = await this.request<{
+        id: string;
+        status: string;
+        result: { stdout: string; stderr: string; exit_code: number } | null;
+        error: string | null;
+      }>("GET", `/api/operations/${encodeURIComponent(op.operation_id)}`, undefined, 10_000);
+
+      if (result.status === "succeeded" && result.result) {
+        return {
+          exit_code: result.result.exit_code,
+          stdout: result.result.stdout ?? "",
+          stderr: result.result.stderr ?? "",
+          duration_ms: 0, // Fleet API doesn't return this in the operation
+          timed_out: false,
+        };
+      }
+
+      if (result.status === "failed") {
+        return {
+          exit_code: result.result?.exit_code ?? 1,
+          stdout: result.result?.stdout ?? "",
+          stderr: result.result?.stderr ?? result.error ?? "Operation failed",
+          duration_ms: 0,
+          timed_out: false,
+        };
+      }
+
+      // Still running — wait before polling again
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    // Timed out waiting for the operation
+    return {
+      exit_code: 1,
+      stdout: "",
+      stderr: `Operation ${op.operation_id} did not complete within ${timeoutMs + 30_000}ms`,
+      duration_ms: timeoutMs,
+      timed_out: true,
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -198,7 +259,7 @@ export class FleetOSClient {
   async getHealth(containerId: string): Promise<FleetOSHealth> {
     return this.request<FleetOSHealth>(
       "GET",
-      `/api/v1/containers/${encodeURIComponent(containerId)}/health`,
+      `/api/containers/${encodeURIComponent(containerId)}/health`,
     );
   }
 
@@ -211,7 +272,7 @@ export class FleetOSClient {
     const params = new URLSearchParams({ path: filePath });
     return this.request<FleetOSFileContent>(
       "GET",
-      `/api/v1/containers/${encodeURIComponent(containerId)}/files?${params.toString()}`,
+      `/api/containers/${encodeURIComponent(containerId)}/files?${params.toString()}`,
     );
   }
 
@@ -221,14 +282,14 @@ export class FleetOSClient {
 
   /** Request provisioning of a new container. */
   async provision(spec: FleetOSProvisionSpec): Promise<FleetOSProvisionJob> {
-    return this.request<FleetOSProvisionJob>("POST", "/api/v1/provision", spec);
+    return this.request<FleetOSProvisionJob>("POST", "/api/provision", spec);
   }
 
   /** Check the status of a provisioning job. */
   async getProvisionStatus(jobId: string): Promise<FleetOSProvisionJob> {
     return this.request<FleetOSProvisionJob>(
       "GET",
-      `/api/v1/provision/${encodeURIComponent(jobId)}`,
+      `/api/provision/${encodeURIComponent(jobId)}`,
     );
   }
 
@@ -239,7 +300,7 @@ export class FleetOSClient {
   /** Lightweight ping to verify the FleetOS API is reachable and authenticated. */
   async ping(): Promise<boolean> {
     try {
-      await this.request<unknown>("GET", "/api/v1/health", undefined, 5_000);
+      await this.request<unknown>("GET", "/api/health", undefined, 5_000);
       return true;
     } catch {
       return false;
