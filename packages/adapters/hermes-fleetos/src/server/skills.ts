@@ -6,6 +6,10 @@ import type {
 import { asString, parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { FleetOSClient } from "../shared/fleetos-client.js";
 
+function resolveFleetOSConfig(value: unknown, envKey: string): string {
+  return (asString(value, "").trim() || process.env[envKey] || "").trim();
+}
+
 /**
  * List hermes skills available inside the FleetOS container by executing
  * `hermes skills list --json` via the FleetOS exec API.
@@ -14,8 +18,8 @@ import { FleetOSClient } from "../shared/fleetos-client.js";
  */
 export async function listSkills(ctx: AdapterSkillContext): Promise<AdapterSkillSnapshot> {
   const config = parseObject(ctx.config);
-  const fleetosUrl = asString(config.fleetosUrl, "");
-  const apiKey = asString(config.apiKey, "");
+  const fleetosUrl = resolveFleetOSConfig(config.fleetosUrl, "FLEETOS_API_URL");
+  const apiKey = resolveFleetOSConfig(config.apiKey, "FLEETOS_API_KEY");
   const containerId = asString(config.containerId, "");
 
   if (!fleetosUrl || !apiKey || !containerId) {
@@ -29,7 +33,7 @@ export async function listSkills(ctx: AdapterSkillContext): Promise<AdapterSkill
     };
   }
 
-  const client = new FleetOSClient(fleetosUrl, apiKey);
+  const client = new FleetOSClient(fleetosUrl, apiKey, { allowLocalhost: true });
   const hermesCommand = asString(config.hermesCommand, "hermes");
 
   try {

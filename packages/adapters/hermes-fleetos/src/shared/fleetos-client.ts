@@ -2,6 +2,7 @@ import type {
   FleetOSContainer,
   FleetOSHealth,
   FleetOSExecResult,
+  FleetOSOperation,
   FleetOSProvisionJob,
   FleetOSProvisionSpec,
   FleetOSFileContent,
@@ -22,11 +23,17 @@ export class FleetOSClientError extends Error {
   }
 }
 
+export interface FleetOSClientOptions {
+  allowLocalhost?: boolean;
+  pollIntervalMs?: number;
+}
+
 export class FleetOSClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly pollIntervalMs: number;
 
-  constructor(baseUrl: string, apiKey: string) {
+  constructor(baseUrl: string, apiKey: string, options: FleetOSClientOptions = {}) {
     // Security: validate and normalize the base URL to prevent SSRF (HIGH)
     let parsed: URL;
     try {
@@ -52,9 +59,10 @@ export class FleetOSClient {
     const hostname = parsed.hostname.toLowerCase();
     if (
       DANGEROUS_HOSTS.includes(hostname) ||
-      hostname === "localhost" ||
-      hostname === "[::1]" ||
-      /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+      (!options.allowLocalhost &&
+        (hostname === "localhost" ||
+          hostname === "[::1]" ||
+          /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)))
     ) {
       throw new FleetOSClientError(
         `FleetOS base URL points to a blocked host: ${hostname}`,
@@ -66,6 +74,7 @@ export class FleetOSClient {
     // Strip trailing slash for consistent URL construction
     this.baseUrl = parsed.origin + parsed.pathname.replace(/\/+$/, "");
     this.apiKey = apiKey;
+    this.pollIntervalMs = options.pollIntervalMs ?? 1_000;
   }
 
   // -------------------------------------------------------------------------
@@ -74,10 +83,14 @@ export class FleetOSClient {
 
   private buildHeaders(): Record<string, string> {
     return {
-      "X-API-Key": this.apiKey,
+      Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     };
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, ms));
   }
 
   private async request<T>(
@@ -133,25 +146,118 @@ export class FleetOSClient {
     }
   }
 
+  private isTerminalOperationStatus(status: string): boolean {
+    return new Set([
+      "succeeded",
+      "completed",
+      "complete",
+      "failed",
+      "cancelled",
+      "canceled",
+      "timeout",
+      "timed_out",
+      "done",
+    ]).has(status.toLowerCase());
+  }
+
+  private toExecResult(payload: unknown): FleetOSExecResult | null {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+
+    const record = payload as Record<string, unknown>;
+    const nested =
+      record.result && typeof record.result === "object" && !Array.isArray(record.result)
+        ? (record.result as Record<string, unknown>)
+        : record;
+
+    const exitCode =
+      typeof nested.exit_code === "number"
+        ? nested.exit_code
+        : typeof record.exit_code === "number"
+          ? record.exit_code
+          : null;
+    const durationMs =
+      typeof nested.duration_ms === "number"
+        ? nested.duration_ms
+        : typeof record.duration_ms === "number"
+          ? record.duration_ms
+          : null;
+    const timedOut =
+      typeof nested.timed_out === "boolean"
+        ? nested.timed_out
+        : typeof record.timed_out === "boolean"
+          ? record.timed_out
+          : null;
+
+    if (exitCode === null || durationMs === null || timedOut === null) return null;
+
+    return {
+      exit_code: exitCode,
+      stdout: typeof nested.stdout === "string" ? nested.stdout : "",
+      stderr: typeof nested.stderr === "string" ? nested.stderr : "",
+      duration_ms: durationMs,
+      timed_out: timedOut,
+    };
+  }
+
+  private async pollOperation(operationId: string, timeoutMs: number): Promise<FleetOSExecResult> {
+    const deadline = Date.now() + timeoutMs;
+    let pollIntervalMs = this.pollIntervalMs;
+
+    while (true) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw new FleetOSClientError(
+          `FleetOS exec operation ${operationId} did not complete within ${timeoutMs}ms`,
+          0,
+          null,
+        );
+      }
+
+      const operation = await this.request<FleetOSOperation>(
+        "GET",
+        `/api/operations/${encodeURIComponent(operationId)}`,
+        undefined,
+        Math.min(remainingMs, 15_000),
+      );
+
+      if (this.isTerminalOperationStatus(operation.status)) {
+        const result = this.toExecResult(operation) ?? this.toExecResult(operation.result);
+        if (result) return result;
+
+        throw new FleetOSClientError(
+          `FleetOS exec operation ${operationId} completed without a usable result payload`,
+          0,
+          operation.detail ?? (typeof operation.error === "string" ? operation.error : null),
+        );
+      }
+
+      const sleepMs = Math.min(pollIntervalMs, Math.max(remainingMs, 0));
+      if (sleepMs > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, sleepMs));
+      }
+      pollIntervalMs = Math.min(pollIntervalMs * 2, 5000);
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Container management
   // -------------------------------------------------------------------------
 
   /** List all containers visible to the current API key. */
   async listContainers(): Promise<FleetOSContainer[]> {
-    return this.request<FleetOSContainer[]>("GET", "/api/v1/containers");
+    return this.request<FleetOSContainer[]>("GET", "/api/containers");
   }
 
   /** Get a single container by ID. */
   async getContainer(id: string): Promise<FleetOSContainer> {
-    return this.request<FleetOSContainer>("GET", `/api/v1/containers/${encodeURIComponent(id)}`);
+    return this.request<FleetOSContainer>("GET", `/api/containers/${encodeURIComponent(id)}`);
   }
 
   /** Start a stopped container. */
   async startContainer(id: string): Promise<FleetOSContainer> {
     return this.request<FleetOSContainer>(
       "POST",
-      `/api/v1/containers/${encodeURIComponent(id)}/start`,
+      `/api/containers/${encodeURIComponent(id)}/start`,
     );
   }
 
@@ -159,7 +265,7 @@ export class FleetOSClient {
   async stopContainer(id: string): Promise<FleetOSContainer> {
     return this.request<FleetOSContainer>(
       "POST",
-      `/api/v1/containers/${encodeURIComponent(id)}/stop`,
+      `/api/containers/${encodeURIComponent(id)}/stop`,
     );
   }
 
@@ -177,17 +283,39 @@ export class FleetOSClient {
     timeoutMs: number = 120_000,
     env?: Record<string, string>,
   ): Promise<FleetOSExecResult> {
-    return this.request<FleetOSExecResult>(
+    const response = await this.request<FleetOSExecResult | FleetOSOperation>(
       "POST",
-      `/api/v1/containers/${encodeURIComponent(containerId)}/exec`,
+      `/api/containers/${encodeURIComponent(containerId)}/exec`,
       {
         command,
-        timeout_ms: timeoutMs,
+        timeout: Math.max(1, Math.ceil(timeoutMs / 1000)),
         ...(env && Object.keys(env).length > 0 ? { env } : {}),
       },
       // Allow extra headroom over the container-level timeout
       timeoutMs + 10_000,
     );
+
+    const directResult = this.toExecResult(response);
+    if (directResult) return directResult;
+
+    const responseRecord =
+      typeof response === "object" && response !== null ? (response as unknown as Record<string, unknown>) : null;
+    const operationId =
+      responseRecord && typeof responseRecord.operation_id === "string"
+        ? responseRecord.operation_id
+        : responseRecord && typeof responseRecord.id === "string"
+          ? responseRecord.id
+          : null;
+
+    if (!operationId) {
+      throw new FleetOSClientError(
+        "FleetOS exec response did not include an operation_id or a direct exec result payload",
+        0,
+        null,
+      );
+    }
+
+    return this.pollOperation(operationId, timeoutMs + 30_000);
   }
 
   // -------------------------------------------------------------------------
@@ -198,7 +326,7 @@ export class FleetOSClient {
   async getHealth(containerId: string): Promise<FleetOSHealth> {
     return this.request<FleetOSHealth>(
       "GET",
-      `/api/v1/containers/${encodeURIComponent(containerId)}/health`,
+      `/api/containers/${encodeURIComponent(containerId)}/health`,
     );
   }
 
@@ -211,7 +339,7 @@ export class FleetOSClient {
     const params = new URLSearchParams({ path: filePath });
     return this.request<FleetOSFileContent>(
       "GET",
-      `/api/v1/containers/${encodeURIComponent(containerId)}/files?${params.toString()}`,
+      `/api/containers/${encodeURIComponent(containerId)}/files?${params.toString()}`,
     );
   }
 
@@ -221,14 +349,14 @@ export class FleetOSClient {
 
   /** Request provisioning of a new container. */
   async provision(spec: FleetOSProvisionSpec): Promise<FleetOSProvisionJob> {
-    return this.request<FleetOSProvisionJob>("POST", "/api/v1/provision", spec);
+    return this.request<FleetOSProvisionJob>("POST", "/api/provision", spec);
   }
 
   /** Check the status of a provisioning job. */
   async getProvisionStatus(jobId: string): Promise<FleetOSProvisionJob> {
     return this.request<FleetOSProvisionJob>(
       "GET",
-      `/api/v1/provision/${encodeURIComponent(jobId)}`,
+      `/api/provision/${encodeURIComponent(jobId)}`,
     );
   }
 
@@ -239,7 +367,7 @@ export class FleetOSClient {
   /** Lightweight ping to verify the FleetOS API is reachable and authenticated. */
   async ping(): Promise<boolean> {
     try {
-      await this.request<unknown>("GET", "/api/v1/health", undefined, 5_000);
+      await this.request<unknown>("GET", "/api/health", undefined, 5_000);
       return true;
     } catch {
       return false;

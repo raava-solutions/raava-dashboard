@@ -36,6 +36,22 @@ export interface FleetOSExecResult {
   timed_out: boolean;
 }
 
+/** Async operation envelope returned by FleetOS for exec requests. */
+export interface FleetOSOperation {
+  id?: string;
+  operation_id?: string;
+  status: string;
+  stream_url?: string | null;
+  result?: unknown;
+  stdout?: string;
+  stderr?: string;
+  exit_code?: number;
+  timed_out?: boolean;
+  duration_ms?: number;
+  error?: string | null;
+  detail?: string | null;
+}
+
 /** A provisioning job for creating/configuring a new container. */
 export interface FleetOSProvisionJob {
   id: string;

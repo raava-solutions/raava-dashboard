@@ -11,7 +11,7 @@ export async function detectModel(
   apiKey: string,
   containerId: string,
 ): Promise<{ model: string; provider: string; source: string } | null> {
-  const client = new FleetOSClient(fleetosUrl, apiKey);
+  const client = new FleetOSClient(fleetosUrl, apiKey, { allowLocalhost: true });
 
   // Common locations for hermes config
   const configPaths = [

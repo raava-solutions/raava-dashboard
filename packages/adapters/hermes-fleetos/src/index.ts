@@ -23,8 +23,8 @@ Don't use when:
 - You don't have a FleetOS API deployment.
 
 Core fields:
-- fleetosUrl (string, required): base URL of the FleetOS API (e.g. https://fleet.raava.io)
-- apiKey (string, required): FleetOS API key for X-API-Key authentication
+- fleetosUrl (string, required): base URL of the FleetOS API (falls back to FLEETOS_API_URL env)
+- apiKey (string, required): FleetOS API key (falls back to FLEETOS_API_KEY env)
 - containerId (string, required): target LXD container ID managed by FleetOS
 
 Execution fields:
@@ -39,7 +39,7 @@ Operational fields:
 - graceSec (number, optional): SIGTERM grace period in seconds (default 20)
 
 Notes:
-- The adapter communicates with FleetOS over HTTP using fetch() and X-API-Key auth.
-- Container exec is performed via the FleetOS /containers/{id}/exec endpoint.
+- The adapter communicates with FleetOS over HTTP using fetch() and Bearer auth.
+- Container exec is performed via the FleetOS /containers/{id}/exec endpoint and polled through /operations/{id} until terminal.
 - Health checks and container status are queried before execution to ensure readiness.
 `;
