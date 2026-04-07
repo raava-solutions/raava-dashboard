@@ -18,6 +18,14 @@ export interface RolePreset {
 }
 
 const DEFAULT_TEMPLATE = "hermes";
+const DEFAULT_SECRETS_MODE = "op";
+
+function roleExtraFields(role: string): Record<string, string> {
+  return {
+    system_prompt_role: role,
+    secrets_mode: DEFAULT_SECRETS_MODE,
+  };
+}
 
 /**
  * Presets keyed by the actual AGENT_ROLES values:
@@ -28,89 +36,67 @@ export const ROLE_PRESETS: Record<string, RolePreset> = {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "executive-leadership",
     integrations: ["crm", "email", "calendar", "bi-tools"],
-    extraFields: {
-      system_prompt_role: "ceo",
-    },
+    extraFields: roleExtraFields("ceo"),
   },
   cto: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "technical-leadership",
     integrations: ["code-review", "ci-cd", "monitoring", "architecture"],
-    extraFields: {
-      system_prompt_role: "cto",
-    },
+    extraFields: roleExtraFields("cto"),
   },
   cmo: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "marketing-leadership",
     integrations: ["content-management", "social-media", "analytics", "email"],
-    extraFields: {
-      system_prompt_role: "cmo",
-    },
+    extraFields: roleExtraFields("cmo"),
   },
   cfo: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "finance-leadership",
     integrations: ["accounting", "bi-tools", "reporting", "budgeting"],
-    extraFields: {
-      system_prompt_role: "cfo",
-    },
+    extraFields: roleExtraFields("cfo"),
   },
   engineer: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "software-engineering",
     integrations: ["code-review", "ci-cd", "ticketing"],
-    extraFields: {
-      system_prompt_role: "engineer",
-    },
+    extraFields: roleExtraFields("engineer"),
   },
   designer: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "design",
     integrations: ["design-tools", "prototyping", "asset-management"],
-    extraFields: {
-      system_prompt_role: "designer",
-    },
+    extraFields: roleExtraFields("designer"),
   },
   pm: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "product-management",
     integrations: ["ticketing", "roadmap", "analytics", "calendar"],
-    extraFields: {
-      system_prompt_role: "pm",
-    },
+    extraFields: roleExtraFields("pm"),
   },
   qa: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "quality-assurance",
     integrations: ["testing", "ci-cd", "ticketing", "monitoring"],
-    extraFields: {
-      system_prompt_role: "qa",
-    },
+    extraFields: roleExtraFields("qa"),
   },
   devops: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "devops-infrastructure",
     integrations: ["ci-cd", "monitoring", "cloud-infra", "logging"],
-    extraFields: {
-      system_prompt_role: "devops",
-    },
+    extraFields: roleExtraFields("devops"),
   },
   researcher: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "research-analysis",
     integrations: ["data-warehouse", "bi-tools", "knowledge-base"],
-    extraFields: {
-      system_prompt_role: "researcher",
-    },
+    extraFields: roleExtraFields("researcher"),
   },
   general: {
     template: DEFAULT_TEMPLATE,
     systemPromptHint: "general-purpose",
     integrations: [],
-    extraFields: {
-      system_prompt_role: "general",
-    },
+    extraFields: roleExtraFields("general"),
   },
 };
 

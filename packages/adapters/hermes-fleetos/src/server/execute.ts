@@ -13,6 +13,10 @@ function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function resolveFleetOSConfig(value: unknown, envKey: string): string {
+  return nonEmpty(value) ?? nonEmpty(process.env[envKey]) ?? "";
+}
+
 const SECRET_KEY_RE = /(key|token|secret|password|authorization)/i;
 
 /** Recursively sanitize objects — replace values whose key matches SECRET_KEY_RE with "***". */
@@ -114,8 +118,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const { runId, agent, config, context, onLog, onMeta } = ctx;
 
   // ---- Read adapter config ----
-  const fleetosUrl = asString(config.fleetosUrl, "");
-  const apiKey = asString(config.apiKey, "");
+  const fleetosUrl = resolveFleetOSConfig(config.fleetosUrl, "FLEETOS_API_URL");
+  const apiKey = resolveFleetOSConfig(config.apiKey, "FLEETOS_API_KEY");
   // Prefer the DB-persisted provisionedContainerId written by the provision poller
   // over the adapterConfig JSON field — the two never synced, causing config_missing errors.
   const containerId = nonEmpty(agent.provisionedContainerId) ?? asString(config.containerId, "");
@@ -126,7 +130,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       signal: null,
       timedOut: false,
       errorMessage:
-        "hermes_fleetos adapter requires fleetosUrl, apiKey, and containerId in adapter config",
+        "hermes_fleetos adapter requires fleetosUrl, apiKey, and containerId via adapter config or FleetOS env vars",
       errorCode: "config_missing",
     };
   }
@@ -144,7 +148,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const BLOCKED_ARG_PREFIXES = ["--exec", "--shell", "--eval", "--run-command", "-c"];
   const rawHermesArgs = asStringArray(config.hermesArgs);
   const hermesArgs = rawHermesArgs.filter(
-    (arg) => !BLOCKED_ARG_PREFIXES.some((prefix) => arg.startsWith(prefix)),
+    (arg: string) => !BLOCKED_ARG_PREFIXES.some((prefix) => arg.startsWith(prefix)),
   );
   const promptTemplate = asString(
     config.promptTemplate,
@@ -219,7 +223,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
 
   // ---- Execute via FleetOS ----
-  const client = new FleetOSClient(fleetosUrl, apiKey);
+  const client = new FleetOSClient(fleetosUrl, apiKey, { allowLocalhost: true });
   const timeoutMs = timeoutSec * 1000;
 
   try {

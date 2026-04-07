@@ -6,6 +6,10 @@ import type {
 import { asString, parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { FleetOSClient, FleetOSClientError } from "../shared/fleetos-client.js";
 
+function resolveFleetOSConfig(value: unknown, envKey: string): string {
+  return (asString(value, "").trim() || process.env[envKey] || "").trim();
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -28,8 +32,8 @@ export async function testEnvironment(
   const checks: AdapterEnvironmentCheck[] = [];
   const config = parseObject(ctx.config);
 
-  const fleetosUrl = asString(config.fleetosUrl, "").trim();
-  const apiKey = asString(config.apiKey, "").trim();
+  const fleetosUrl = resolveFleetOSConfig(config.fleetosUrl, "FLEETOS_API_URL");
+  const apiKey = resolveFleetOSConfig(config.apiKey, "FLEETOS_API_KEY");
   const containerId = asString(config.containerId, "").trim();
 
   // ---- Validate required config fields ----
@@ -98,7 +102,7 @@ export async function testEnvironment(
     };
   }
 
-  const client = new FleetOSClient(fleetosUrl, apiKey);
+  const client = new FleetOSClient(fleetosUrl, apiKey, { allowLocalhost: true });
 
   // ---- Test 1: FleetOS API reachable ----
   try {
