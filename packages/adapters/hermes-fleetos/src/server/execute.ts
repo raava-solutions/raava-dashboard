@@ -116,7 +116,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   // ---- Read adapter config ----
   const fleetosUrl = asString(config.fleetosUrl, "");
   const apiKey = asString(config.apiKey, "");
-  const containerId = asString(config.containerId, "");
+  // Prefer the DB-persisted provisionedContainerId written by the provision poller
+  // over the adapterConfig JSON field — the two never synced, causing config_missing errors.
+  const containerId = nonEmpty(agent.provisionedContainerId) ?? asString(config.containerId, "");
 
   if (!fleetosUrl || !apiKey || !containerId) {
     return {
