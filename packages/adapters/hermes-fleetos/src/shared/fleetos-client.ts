@@ -180,15 +180,15 @@ export class FleetOSClient {
         ? nested.duration_ms
         : typeof record.duration_ms === "number"
           ? record.duration_ms
-          : null;
+          : 0; // Fleet API async operations may omit duration_ms; default to 0
     const timedOut =
       typeof nested.timed_out === "boolean"
         ? nested.timed_out
         : typeof record.timed_out === "boolean"
           ? record.timed_out
-          : null;
+          : false; // Fleet API async operations may omit timed_out; default to false
 
-    if (exitCode === null || durationMs === null || timedOut === null) return null;
+    if (exitCode === null) return null;
 
     return {
       exit_code: exitCode,
