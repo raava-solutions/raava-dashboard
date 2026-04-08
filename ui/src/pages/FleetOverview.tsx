@@ -77,6 +77,57 @@ function Gauge({ value, label, warn = 80, danger = 95 }: { value: number; label:
 }
 
 // ---------------------------------------------------------------------------
+// Provider badge
+/**
+ * Render a small pill badge indicating the infrastructure provider for a container.
+ *
+ * - `"lxd"` → "Bare Metal" (neutral/grey)
+ * - `"aws"` → "AWS" (orange)
+ * - `"gcp"` → "GCP" (blue)
+ * - unknown value → raw value (neutral)
+ *
+ * Returns null when provider is undefined/null so callers need no guard.
+ *
+ * @param provider - The provider string from the Fleet API container object
+ * @returns A badge element, or null if provider is not set
+ */
+
+const providerConfig: Record<string, { label: string; className: string }> = {
+  lxd: {
+    label: "Bare Metal",
+    className: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300",
+  },
+  aws: {
+    label: "AWS",
+    className: "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300",
+  },
+  gcp: {
+    label: "GCP",
+    className: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300",
+  },
+};
+
+function ProviderBadge({ provider }: { provider?: string }) {
+  if (!provider) return null;
+  const config = providerConfig[provider];
+  const label = config?.label ?? provider;
+  const className =
+    config?.className ??
+    "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300";
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap shrink-0",
+        className,
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Container card
 /**
  * Render a clickable card for a FleetContainer that links to the container's detail page.
@@ -108,7 +159,10 @@ function ContainerCard({ container }: { container: FleetContainer }) {
             <span className="font-mono truncate">{container.id}</span>
           </div>
         </div>
-        <StatusBadge status={container.status} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <ProviderBadge provider={container.provider} />
+          <StatusBadge status={container.status} />
+        </div>
       </div>
 
       {h && (
