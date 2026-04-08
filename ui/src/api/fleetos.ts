@@ -15,6 +15,7 @@ export interface FleetContainer {
   id: string;
   name: string;
   status: "running" | "stopped" | "frozen" | "error" | "provisioning";
+  provider?: "lxd" | "aws" | "gcp" | string;
   tenant_id: string;
   image: string;
   config: Record<string, unknown>;
