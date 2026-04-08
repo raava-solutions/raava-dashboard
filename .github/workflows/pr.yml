@@ -11,6 +11,7 @@ concurrency:
 
 jobs:
   policy:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
 
@@ -90,6 +91,7 @@ jobs:
 
   verify:
     needs: [policy]
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 20
 
@@ -128,6 +130,7 @@ jobs:
 
   e2e:
     needs: [policy]
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 30
 
