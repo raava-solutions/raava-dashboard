@@ -29,7 +29,31 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: npx playwright install --with-deps chromium
+
+      - name: Get Playwright version
+        id: playwright-version
+        run: |
+          version="$(grep -m1 -oE "'?@playwright/test@[0-9]+\.[0-9]+\.[0-9]+" pnpm-lock.yaml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          if [ -z "$version" ]; then
+            echo "::error::Could not determine Playwright version from pnpm-lock.yaml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Run e2e tests
         run: pnpm run test:e2e
